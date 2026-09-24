@@ -17,6 +17,10 @@ Me gustaría que el informe llegue antes del viernes porque necesitamos revisarl
 
 La línea `@claude` se borra sola. Si no hay línea `@claude`, se aplica la **tarea por defecto** del `CLAUDE.md`.
 
+**Imágenes:** las imágenes pegadas en línea (Ctrl+V de una captura, por ejemplo) viajan junto con el texto. Se puede mandar solo una imagen, o una imagen con `@claude ¿qué dice esto?` debajo. Las imágenes flotantes, con ajuste de texto, no se envían.
+
+**Formato:** la respuesta copia el estilo, la fuente, el tamaño, el color y la alineación del texto de ella. Si ella escribió un título o un ítem de lista, la respuesta va en estilo Normal.
+
 Para **cancelar**, poné el cursor dentro del bloque gris y volvé a presionar el atajo.
 
 ## Arquitectura

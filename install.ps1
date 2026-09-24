@@ -58,6 +58,7 @@ if (-not (Test-Path $csc)) { throw "No encuentro csc.exe de .NET Framework 4 ($c
 & $csc /nologo /target:winexe /codepage:65001 /optimize+ `
     "/out:$installDir\ClaudeWord.exe" `
     /r:System.Web.Extensions.dll /r:Microsoft.CSharp.dll /r:System.Core.dll `
+    /r:System.Drawing.dll /r:System.Xml.dll `
     "$root\src\helper\ClaudeWord.cs"
 if ($LASTEXITCODE -ne 0) { throw 'Fallo la compilacion del helper.' }
 

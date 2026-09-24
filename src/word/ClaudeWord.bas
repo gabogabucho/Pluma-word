@@ -7,6 +7,8 @@ Attribute VB_Name = "ClaudeWord"
 '   - Una linea "@claude <instruccion>" dentro de la seleccion es la
 '     instruccion (se borra del documento). Sin esa linea, Claude aplica
 '     la tarea por defecto definida en el CLAUDE.md del workspace.
+'   - Las imagenes en linea del rango tambien se envian (el helper las extrae).
+'   - La respuesta copia el formato del texto de ella (estilo, fuente, color).
 '   - La respuesta se escribe en un bloque protegido (control de
 '     contenido bloqueado, en gris) hasta que termina.
 '   - Ejecutar la macro con el cursor dentro de un bloque en curso
@@ -21,7 +23,7 @@ Option Explicit
 Private Const TAG_PREFIX As String = "claude-"
 Private Const INSTR_PREFIX As String = "@claude"
 Private Const MAX_CHARS As Long = 60000
-Private Const WD_COLOR_STATUS As Long = 15263976      ' #E8E8E8, casi blanco
+Private Const WD_COLOR_STATUS As Long = 16777215      ' blanco: el "pensando" no se ve
 Private Const WD_CC_HIDDEN As Long = 2                 ' wdContentControlHidden
 
 Public Sub EnviarAClaude()
@@ -34,23 +36,33 @@ Public Sub EnviarAClaude()
     If CancelarSiEstaEnCurso(doc) Then Exit Sub
 
     Dim instruccion As String, texto As String, linea As String
-    Dim ancla As Range, p As Paragraph
+    Dim ancla As Range, p As Paragraph, fuente As Range
     Dim aBorrar As New Collection
+    Dim imagenes As Long
 
-    For Each p In RangoAEnviar().Paragraphs
+    Set fuente = RangoAEnviar().Duplicate
+    For Each p In fuente.Paragraphs
         linea = LimpiarLinea(p.Range.Text)
         If EsInstruccion(linea) Then
             instruccion = Trim$(Mid$(linea, Len(INSTR_PREFIX) + 1))
             If Left$(instruccion, 1) = ":" Then instruccion = Trim$(Mid$(instruccion, 2))
             aBorrar.Add p.Range
-        ElseIf Len(linea) > 0 Then
-            texto = texto & linea & vbLf
-            Set ancla = p.Range
+        Else
+            ' Word representa cada imagen en linea con un caracter "/" en .Text.
+            If p.Range.InlineShapes.Count > 0 Then
+                imagenes = imagenes + p.Range.InlineShapes.Count
+                If Len(Replace(Replace(linea, "/", ""), " ", "")) = 0 Then linea = ""
+                Set ancla = p.Range
+            End If
+            If Len(linea) > 0 Then
+                texto = texto & linea & vbLf
+                Set ancla = p.Range
+            End If
         End If
     Next p
 
     If ancla Is Nothing Then
-        Application.StatusBar = "Claude: no hay texto para enviar."
+        Application.StatusBar = "Claude: no hay texto ni im" & ChrW(225) & "genes para enviar."
         Exit Sub
     End If
     If Len(texto) > MAX_CHARS Then texto = Left$(texto, MAX_CHARS)
@@ -60,14 +72,19 @@ Public Sub EnviarAClaude()
         aBorrar(i).Delete
     Next i
 
-    ' Parrafo nuevo debajo del ancla, envuelto en un bloque protegido.
-    ancla.InsertParagraphAfter
-    Dim destino As Range
-    Set destino = ancla.Paragraphs.Last.Range
-
     Dim id As String
     Randomize
     id = Format$(Now, "yyyymmddhhnnss") & CStr(Int(Rnd * 100000))
+
+    ' Con imagenes, el helper extrae el rango enviado via WordOpenXML.
+    ' Marcador oculto (empieza con "_"): no aparece en el dialogo de marcadores.
+    If imagenes > 0 Then doc.Bookmarks.Add "_claude_" & id, fuente
+
+    ' Parrafo nuevo debajo del ancla, con el formato del texto de ella.
+    ancla.InsertParagraphAfter
+    Dim destino As Range
+    Set destino = ancla.Paragraphs.Last.Range
+    CopiarFormato ancla, destino
 
     Dim cc As ContentControl
     Set cc = doc.ContentControls.Add(wdContentControlRichText, destino)
@@ -78,8 +95,9 @@ Public Sub EnviarAClaude()
     cc.Range.Font.Color = WD_COLOR_STATUS
     cc.LockContents = True
 
-    doc.Variables.Add TAG_PREFIX & id & "-text", texto
+    If Len(texto) > 0 Then doc.Variables.Add TAG_PREFIX & id & "-text", texto
     If Len(instruccion) > 0 Then doc.Variables.Add TAG_PREFIX & id & "-instr", instruccion
+    doc.Variables.Add TAG_PREFIX & id & "-color", CStr(ColorDelTexto(ancla))
 
     Dim exe As String
     exe = Environ$("LOCALAPPDATA") & "\ClaudeWord\ClaudeWord.exe"
@@ -113,6 +131,43 @@ Private Function CancelarSiEstaEnCurso(doc As Document) As Boolean
             End If
         End If
     Next cc
+End Function
+
+' La respuesta hereda estilo, fuente y parrafo del texto de ella: InsertParagraphAfter
+' solo copia el formato de la marca de parrafo, que puede no coincidir con el de las
+' letras. Si ella escribio un titulo o un item de lista, la respuesta va como Normal.
+Private Sub CopiarFormato(ByVal origen As Range, ByVal destino As Range)
+    Dim par As Paragraph
+    Set par = origen.Paragraphs(1)
+    If par.OutlineLevel <> wdOutlineLevelBodyText Then
+        destino.Style = wdStyleNormal
+        destino.ListFormat.RemoveNumbers
+        Exit Sub
+    End If
+    destino.Style = par.Style
+    destino.ParagraphFormat = par.Format
+    destino.ListFormat.RemoveNumbers
+    destino.Font = PrimerCaracterDeTexto(origen).Font.Duplicate
+End Sub
+
+' Primer caracter visible (no imagen ni espacio), para copiar su fuente.
+Private Function PrimerCaracterDeTexto(ByVal r As Range) As Range
+    Dim c As Range
+    For Each c In r.Characters
+        If c.InlineShapes.Count = 0 And Len(Trim$(LimpiarLinea(c.Text))) > 0 Then
+            Set PrimerCaracterDeTexto = c
+            Exit Function
+        End If
+    Next c
+    Set PrimerCaracterDeTexto = r.Characters(1)
+End Function
+
+' Color del texto de ella (wdColorAutomatic si es mixto o no hay texto).
+Private Function ColorDelTexto(ByVal r As Range) As Long
+    Dim color As Long
+    color = PrimerCaracterDeTexto(r).Font.Color
+    If color = wdUndefined Then color = wdColorAutomatic
+    ColorDelTexto = color
 End Function
 
 ' Que se envia sin tener que seleccionar:
