@@ -152,6 +152,7 @@ namespace Pluma
         public string Shortcut = "Alt+Enter";
         public bool HasStreamColor;
         public int StreamColor;
+        public bool AllowInternet = true;
         Dictionary<string, object> raw = new Dictionary<string, object>();
 
         public static Settings Load(string path)
@@ -172,6 +173,11 @@ namespace Pluma
                     s.StreamColor = Convert.ToInt32(v, CultureInfo.InvariantCulture);
                     s.HasStreamColor = true;
                 }
+                if (o.TryGetValue("allowInternet", out v))
+                {
+                    if (v is bool) s.AllowInternet = (bool)v;
+                    else if (v is string && string.Equals((string)v, "false", StringComparison.OrdinalIgnoreCase)) s.AllowInternet = false;
+                }
             }
             catch { }
             return s;
@@ -184,11 +190,12 @@ namespace Pluma
             raw["shortcut"] = string.IsNullOrEmpty(Shortcut) ? "Alt+Enter" : Shortcut;
             if (HasStreamColor) raw["streamColor"] = StreamColor;
             else raw.Remove("streamColor");
+            raw["allowInternet"] = AllowInternet;
 
             var sb = new StringBuilder();
             sb.Append("{\r\n");
             bool first = true;
-            string[] order = new[] { "defaultAgent", "shortcut", "streamColor" };
+            string[] order = new[] { "defaultAgent", "shortcut", "streamColor", "allowInternet" };
             var seen = new Dictionary<string, bool>();
             foreach (string key in order) WriteKey(sb, ref first, seen, key);
             foreach (string key in new List<string>(raw.Keys)) WriteKey(sb, ref first, seen, key);
@@ -247,6 +254,7 @@ namespace Pluma
         readonly ComboBox agents = new ComboBox();
         readonly TextBox shortcut = new TextBox();
         readonly CheckBox ownColor = new CheckBox();
+        readonly CheckBox internet = new CheckBox();
         readonly Button swatch = new Button();
         readonly Label status = new Label();
 
@@ -260,7 +268,7 @@ namespace Pluma
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(440, 318);
+            ClientSize = new Size(440, 372);
             Font = new Font("Segoe UI", 9f);
 
             var title = new Label();
@@ -276,26 +284,35 @@ namespace Pluma
             agents.SetBounds(16, 64, 408, 24);
             FillAgents(workspace);
 
+            internet.Text = "Permitir internet";
+            internet.Checked = settings.AllowInternet;
+            internet.SetBounds(16, 96, 400, 22);
+
+            var netHint = new Label();
+            netHint.Text = "Búsqueda y lectura de páginas. No habilita editar archivos ni correr comandos.";
+            netHint.ForeColor = Color.DimGray;
+            netHint.SetBounds(16, 118, 408, 32);
+
             var keyLabel = new Label();
             keyLabel.Text = "Atajo";
-            keyLabel.SetBounds(16, 100, 400, 18);
+            keyLabel.SetBounds(16, 154, 400, 18);
 
             shortcut.ReadOnly = true;
             shortcut.ShortcutsEnabled = false;
             shortcut.Text = string.IsNullOrEmpty(settings.Shortcut) ? "Alt+Enter" : settings.Shortcut;
-            shortcut.SetBounds(16, 120, 200, 24);
+            shortcut.SetBounds(16, 174, 200, 24);
             shortcut.KeyDown += OnShortcut;
 
             var keyHint = new Label();
             keyHint.Text = "Hacé clic y presioná la combinación. De fábrica es Alt+Enter.";
             keyHint.ForeColor = Color.DimGray;
-            keyHint.SetBounds(16, 146, 408, 18);
+            keyHint.SetBounds(16, 200, 408, 18);
 
             ownColor.Text = "Color propio mientras se escribe la respuesta";
-            ownColor.SetBounds(16, 176, 360, 22);
+            ownColor.SetBounds(16, 228, 400, 22);
             ownColor.Checked = settings.HasStreamColor;
 
-            swatch.SetBounds(16, 204, 72, 26);
+            swatch.SetBounds(16, 254, 72, 26);
             swatch.FlatStyle = FlatStyle.Flat;
             swatch.BackColor = settings.HasStreamColor ? UiColor.FromOle(settings.StreamColor) : Color.FromArgb(47, 84, 150);
             swatch.Text = "";
@@ -304,26 +321,28 @@ namespace Pluma
             var colorHint = new Label();
             colorHint.Text = "Al terminar, el texto vuelve al color del párrafo.";
             colorHint.ForeColor = Color.DimGray;
-            colorHint.SetBounds(96, 208, 320, 18);
+            colorHint.SetBounds(96, 258, 320, 18);
 
             var save = new Button();
             save.Text = "Guardar";
-            save.SetBounds(16, 246, 100, 28);
+            save.SetBounds(16, 296, 100, 28);
             save.Click += OnSave;
 
-            status.SetBounds(124, 250, 300, 22);
+            status.SetBounds(124, 300, 300, 22);
             status.ForeColor = Color.DimGray;
 
             var credit = new LinkLabel();
             credit.Text = "Hecho por @gabogabucho";
             credit.LinkBehavior = LinkBehavior.HoverUnderline;
-            credit.SetBounds(16, 286, 400, 20);
+            credit.SetBounds(16, 340, 400, 20);
             credit.Links.Add(10, 12, "https://x.com/gabogabucho");
             credit.LinkClicked += OnCredit;
 
             Controls.Add(title);
             Controls.Add(agentLabel);
             Controls.Add(agents);
+            Controls.Add(internet);
+            Controls.Add(netHint);
             Controls.Add(keyLabel);
             Controls.Add(shortcut);
             Controls.Add(keyHint);
@@ -409,6 +428,7 @@ namespace Pluma
             }
             settings.DefaultAgent = pick.Id;
             settings.Shortcut = shortcut.Text;
+            settings.AllowInternet = internet.Checked;
             settings.HasStreamColor = ownColor.Checked;
             settings.StreamColor = UiColor.ToOle(swatch.BackColor);
             try { settings.Save(settingsPath); }

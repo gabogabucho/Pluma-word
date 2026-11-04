@@ -147,8 +147,10 @@ Private Sub Enviar(ByVal tarea As String, ByVal permiteDetener As Boolean)
         pref = ValorJsonString(ajustes, "defaultAgent")
         If Len(pref) > 0 Then agente = LCase$(pref)
     End If
-    Dim tinta As String
+    Dim tinta As String, web As String
     tinta = ValorJsonNumero(ajustes, "streamColor")
+    web = ValorJsonBool(ajustes, "allowInternet")
+    If Len(web) = 0 Then web = "true"
 
     Dim i As Long
     paso = "borrar mencion"
@@ -186,6 +188,7 @@ Private Sub Enviar(ByVal tarea As String, ByVal permiteDetener As Boolean)
     If Len(agente) > 0 Then doc.Variables.Add TAG_PREFIX & id & "-agent", agente
     If Len(tarea) > 0 And Len(instruccion) = 0 Then doc.Variables.Add TAG_PREFIX & id & "-task", tarea
     If Len(tinta) > 0 Then doc.Variables.Add TAG_PREFIX & id & "-ink", tinta
+    doc.Variables.Add TAG_PREFIX & id & "-web", web
     doc.Variables.Add TAG_PREFIX & id & "-color", CStr(ColorDelTexto(ancla))
 
     Dim exe As String
@@ -294,7 +297,7 @@ Private Sub CerrarHuerfano(doc As Document, ByVal tag As String)
         End If
     End If
     Dim sufijo As Variant
-    For Each sufijo In Array("-text", "-instr", "-color", "-stop", "-hb", "-agent", "-task", "-ink")
+    For Each sufijo In Array("-text", "-instr", "-color", "-stop", "-hb", "-agent", "-task", "-ink", "-web")
         doc.Variables(tag & sufijo).Delete
     Next sufijo
     doc.Bookmarks("_pluma_" & Mid$(tag, Len(TAG_PREFIX) + 1)).Delete
@@ -610,6 +613,18 @@ Private Function ValorJsonString(ByVal json As String, ByVal clave As String) As
     re.Pattern = """" & clave & """" & "\s*:\s*""([^""]*)"""
     Set ms = re.Execute(json)
     If ms.Count > 0 Then ValorJsonString = CStr(ms(0).SubMatches(0))
+Fin:
+End Function
+
+Private Function ValorJsonBool(ByVal json As String, ByVal clave As String) As String
+    On Error GoTo Fin
+    If Len(json) = 0 Or Len(clave) = 0 Then Exit Function
+    Dim re As Object, ms As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.IgnoreCase = True
+    re.Pattern = """" & clave & """" & "\s*:\s*(true|false)"
+    Set ms = re.Execute(json)
+    If ms.Count > 0 Then ValorJsonBool = LCase$(CStr(ms(0).SubMatches(0)))
 Fin:
 End Function
 

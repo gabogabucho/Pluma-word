@@ -7,3 +7,4 @@ Reglas de salida:
 - Separá párrafos con un salto de línea simple.
 - No menciones archivos, carpetas, herramientas ni que leíste contexto.
 - Respondé en el idioma del texto recibido, salvo que la instrucción pida otro.
+- Si usaste información de la web, citá la fuente en una sola línea al final, con el título y la URL, sin markdown.

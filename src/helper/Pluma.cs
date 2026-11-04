@@ -213,7 +213,12 @@ namespace Pluma
                     File.WriteAllText(Path.Combine(runDir, "prompt.txt"), textPrompt, new UTF8Encoding(false));
                 }
 
-                Launch launch = BuildLaunch(agent, cfg, baseDir, command, textPrompt, imagePaths, runDir);
+                bool allowInternet = ui.AllowInternet;
+                string webVar = ReadVariable(doc, tag + "-web");
+                if (webVar == "false" || webVar == "0") allowInternet = false;
+                else if (webVar == "true" || webVar == "1") allowInternet = true;
+
+                Launch launch = BuildLaunch(agent, cfg, baseDir, command, textPrompt, imagePaths, runDir, allowInternet);
                 ResetRun();
                 lock (Gate) { status = Thinking(agent); }
 
@@ -506,11 +511,12 @@ namespace Pluma
         }
 
         static Launch BuildLaunch(Agent agent, Config cfg, string baseDir, string command,
-            string textPrompt, List<string> imagePaths, string runDir)
+            string textPrompt, List<string> imagePaths, string runDir, bool internet)
         {
             string rulesPath = Path.Combine(baseDir, "word-rules.md");
             var args = new List<string>();
             foreach (string a in agent.Args) args.Add(Subst(a, cfg, runDir, rulesPath));
+            ApplyInternet(args, agent, internet);
 
             if (agent.Rules == "file-arg" && !string.IsNullOrEmpty(agent.RulesArg))
             {
@@ -553,6 +559,123 @@ namespace Pluma
             launch.WorkDir = cfg.Workspace;
             ApplyCmdShim(launch, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe"));
             return launch;
+        }
+
+        // internet true: suma la búsqueda/lectura web del proveedor.
+        // internet false: la saca. Nunca agrega Bash, Write ni Edit.
+        static void ApplyInternet(List<string> args, Agent agent, bool internet)
+        {
+            NetSpec spec = internet ? agent.InternetOn : agent.InternetOff;
+            if (spec == null) spec = DefaultInternet(agent.Id, internet);
+            if (spec == null) return;
+            if (spec.Prepend != null)
+            {
+                for (int i = spec.Prepend.Count - 1; i >= 0; i--) args.Insert(0, spec.Prepend[i]);
+            }
+            if (!string.IsNullOrEmpty(spec.ExtendFlag)) ExtendFlag(args, spec.ExtendFlag, spec.Extend);
+            if (!string.IsNullOrEmpty(spec.SetFlag)) SetFlag(args, spec.SetFlag, spec.Set);
+            if (spec.Append != null) args.AddRange(spec.Append);
+            LockDown(args, agent.Id);
+        }
+
+        // --yolo aprueba cualquier herramienta, shell incluido. En Grok y Hermes
+        // no se pasa: Grok queda con allowlist + deny, Hermes con un toolset chico.
+        static void LockDown(List<string> args, string id)
+        {
+            if (id != "grok" && id != "hermes") return;
+            args.RemoveAll(delegate(string a) { return a == "--yolo"; });
+            if (id != "grok") return;
+            if (!args.Contains("--always-approve")) args.Add("--always-approve");
+            ExtendFlag(args, "--disallowed-tools", "run_terminal_cmd,run_terminal_command,search_replace,write,write_file,Agent");
+            EnsureDeny(args, "Bash");
+            EnsureDeny(args, "Edit");
+            EnsureDeny(args, "Write");
+            EnsureDeny(args, "MCPTool");
+        }
+
+        static void EnsureDeny(List<string> args, string name)
+        {
+            for (int i = 0; i < args.Count - 1; i++)
+            {
+                if (args[i] == "--deny" && string.Equals(args[i + 1], name, StringComparison.OrdinalIgnoreCase)) return;
+            }
+            args.Add("--deny");
+            args.Add(name);
+        }
+
+        static void ExtendFlag(List<string> args, string flag, string extra)
+        {
+            if (string.IsNullOrEmpty(extra)) return;
+            var add = new List<string>();
+            foreach (string part in extra.Split(','))
+            {
+                string token = part.Trim();
+                if (token.Length > 0) add.Add(token);
+            }
+            for (int i = 0; i < args.Count - 1; i++)
+            {
+                if (args[i] != flag) continue;
+                string cur = args[i + 1] ?? "";
+                foreach (string token in add)
+                {
+                    if (cur.Length == 0) cur = token;
+                    else if (!HasToken(cur, token)) cur = cur + "," + token;
+                }
+                args[i + 1] = cur;
+                return;
+            }
+            args.Add(flag);
+            args.Add(string.Join(",", add.ToArray()));
+        }
+
+        static void SetFlag(List<string> args, string flag, string value)
+        {
+            for (int i = 0; i < args.Count - 1; i++)
+            {
+                if (args[i] != flag) continue;
+                args[i + 1] = value ?? "";
+                return;
+            }
+            args.Add(flag);
+            args.Add(value ?? "");
+        }
+
+        static bool HasToken(string list, string token)
+        {
+            foreach (string part in list.Split(','))
+            {
+                if (string.Equals(part.Trim(), token.Trim(), StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
+        }
+
+        static NetSpec DefaultInternet(string id, bool on)
+        {
+            if (id == "claude")
+            {
+                if (!on) return null;
+                return NetSpec.WithExtend("--tools", "WebSearch,WebFetch");
+            }
+            if (id == "codex")
+            {
+                if (on) return NetSpec.PrependOnly("--search");
+                return NetSpec.AppendOnly("-c", "web_search=\"disabled\"");
+            }
+            if (id == "gemini")
+            {
+                if (on) return NetSpec.AppendOnly("--allowed-tools", "google_web_search,web_fetch");
+                return NetSpec.WithExtend("--exclude-tools", "google_web_search,web_fetch");
+            }
+            if (id == "grok")
+            {
+                if (on) return NetSpec.WithExtend("--tools", "web_search,web_fetch");
+                return NetSpec.WithExtend("--disallowed-tools", "web_search,web_fetch");
+            }
+            if (id == "hermes")
+            {
+                return NetSpec.SetOnly("--toolsets", on ? "web" : "todo");
+            }
+            return null;
         }
 
         static void ApplyCmdShim(Launch launch, string cmdExe)
@@ -1067,7 +1190,7 @@ namespace Pluma
 
         static void DeleteVariables(dynamic doc, string tag)
         {
-            foreach (string suffix in new[] { "-text", "-instr", "-color", "-stop", "-hb", "-agent", "-task", "-ink" })
+            foreach (string suffix in new[] { "-text", "-instr", "-color", "-stop", "-hb", "-agent", "-task", "-ink", "-web" })
             {
                 try { doc.Variables.Item(tag + suffix).Delete(); } catch { }
             }
@@ -1220,6 +1343,11 @@ namespace Pluma
                 set.Save(Path.Combine(dir, "settings.json"));
                 back = Settings.Load(Path.Combine(dir, "settings.json"));
                 failed += Expect("settings sin color", back.HasStreamColor ? "si" : "no", "no");
+                failed += Expect("settings internet", back.AllowInternet ? "si" : "no", "si");
+                set.AllowInternet = false;
+                set.Save(Path.Combine(dir, "settings.json"));
+                back = Settings.Load(Path.Combine(dir, "settings.json"));
+                failed += Expect("settings sin internet", back.AllowInternet ? "si" : "no", "no");
 
                 var cfg = new Config();
                 cfg.Workspace = dir;
@@ -1240,10 +1368,13 @@ namespace Pluma
                 string composed = ComposePrompt(claude, cfg, dir, null, "hola", 0);
                 failed += Expect("claude sin preambulo", composed, "hola");
 
-                Launch launch = BuildLaunch(claude, cfg, dir, cfg.ClaudePath, composed, new List<string>(), null);
+                Launch launch = BuildLaunch(claude, cfg, dir, cfg.ClaudePath, composed, new List<string>(), null, true);
                 failed += Expect("launch model", launch.Arguments.IndexOf("--model sonnet", StringComparison.Ordinal) >= 0 ? "si" : "no", "si");
                 failed += Expect("launch rules", launch.Arguments.IndexOf("--append-system-prompt-file", StringComparison.Ordinal) >= 0 ? "si" : "no", "si");
-                failed += Expect("launch tools", launch.Arguments.IndexOf("--tools Read,Glob,Grep,Skill", StringComparison.Ordinal) >= 0 ? "si" : "no", "si");
+                failed += Expect("launch tools", launch.Arguments.IndexOf("--tools Read,Glob,Grep,Skill,WebSearch,WebFetch", StringComparison.Ordinal) >= 0 ? "si" : "no", "si");
+                failed += Expect("launch sin bash", launch.Arguments.IndexOf("Bash", StringComparison.Ordinal) >= 0 ? "si" : "no", "no");
+                Launch offline = BuildLaunch(claude, cfg, dir, cfg.ClaudePath, composed, new List<string>(), null, false);
+                failed += Expect("launch sin web", offline.Arguments.IndexOf("WebSearch", StringComparison.Ordinal) >= 0 ? "si" : "no", "no");
                 failed += Expect("launch env", launch.Env.ContainsKey("CLAUDE_CONFIG_DIR") ? launch.Env["CLAUDE_CONFIG_DIR"] : "-", cfg.ClaudeConfigDir);
 
                 Agent otro = new Agent();
@@ -1287,6 +1418,18 @@ namespace Pluma
                     failed += Expect("template aider", tAider.PromptVia + " " + tAider.PromptArg + " " + (tAider.Stream ? "stream" : "bloque"), "file --message-file bloque");
                     Agent tGrok = file.Resolve("grok");
                     failed += Expect("template grok", tGrok.PromptVia + " " + tGrok.PromptArg + " " + tGrok.Parser + " " + tGrok.Images, "file --prompt-file grok-stream none");
+                    Launch grokOn = BuildLaunch(tGrok, bare, Path.GetDirectoryName(template), "grok", "hola", new List<string>(), dir, true);
+                    failed += Expect("grok web", grokOn.Arguments.IndexOf("web_search,web_fetch", StringComparison.Ordinal) >= 0
+                        && grokOn.Arguments.IndexOf("--deny Bash", StringComparison.Ordinal) >= 0
+                        && grokOn.Arguments.IndexOf("--yolo", StringComparison.Ordinal) < 0 ? "si" : "no", "si");
+                    Launch grokOff = BuildLaunch(tGrok, bare, Path.GetDirectoryName(template), "grok", "hola", new List<string>(), dir, false);
+                    failed += Expect("grok sin web", grokOff.Arguments.IndexOf("--tools read_file,grep,list_dir,", StringComparison.Ordinal) >= 0 ? "si" : "no", "no");
+                    Agent tHermesLaunch = file.Resolve("hermes");
+                    Launch hermesOn = BuildLaunch(tHermesLaunch, bare, Path.GetDirectoryName(template), "hermes", "hola", new List<string>(), dir, true);
+                    Launch hermesOff = BuildLaunch(tHermesLaunch, bare, Path.GetDirectoryName(template), "hermes", "hola", new List<string>(), dir, false);
+                    failed += Expect("hermes web", hermesOn.Arguments.IndexOf("--toolsets web", StringComparison.Ordinal) >= 0
+                        && hermesOn.Arguments.IndexOf("--yolo", StringComparison.Ordinal) < 0 ? "si" : "no", "si");
+                    failed += Expect("hermes sin web", hermesOff.Arguments.IndexOf("--toolsets todo", StringComparison.Ordinal) >= 0 ? "si" : "no", "si");
                     ResetRun();
                     ApplyJsonl(tGrok, json, "{\"type\":\"text\",\"data\":\"Hola\"}");
                     ApplyJsonl(tGrok, json, "{\"type\":\"tool_call\",\"toolName\":\"read_file\",\"status\":\"in_progress\"}");
@@ -1409,6 +1552,47 @@ namespace Pluma
         public string WorkDir;
     }
 
+    class NetSpec
+    {
+        public List<string> Prepend = new List<string>();
+        public List<string> Append = new List<string>();
+        public string ExtendFlag;
+        public string Extend;
+        public string SetFlag;
+        public string Set;
+
+        public static NetSpec WithExtend(string flag, string extra)
+        {
+            var s = new NetSpec();
+            s.ExtendFlag = flag;
+            s.Extend = extra;
+            return s;
+        }
+
+        public static NetSpec PrependOnly(string arg)
+        {
+            var s = new NetSpec();
+            s.Prepend.Add(arg);
+            return s;
+        }
+
+        public static NetSpec AppendOnly(string flag, string value)
+        {
+            var s = new NetSpec();
+            s.Append.Add(flag);
+            s.Append.Add(value);
+            return s;
+        }
+
+        public static NetSpec SetOnly(string flag, string value)
+        {
+            var s = new NetSpec();
+            s.SetFlag = flag;
+            s.Set = value;
+            return s;
+        }
+    }
+
     class JsonlRule
     {
         public string Type;
@@ -1438,6 +1622,8 @@ namespace Pluma
         public string Rules = "none";
         public string RulesArg = "--append-system-prompt-file";
         public string Context = "none";
+        public NetSpec InternetOn;
+        public NetSpec InternetOff;
         public Dictionary<string, string> Env = new Dictionary<string, string>();
         public List<JsonlRule> TextRules = new List<JsonlRule>();
         public List<JsonlRule> ErrorRules = new List<JsonlRule>();
@@ -1551,7 +1737,34 @@ namespace Pluma
             a.TextRules = Rules(d, "textRules");
             a.ErrorRules = Rules(d, "errorRules");
             a.StatusRules = Rules(d, "statusRules");
+            object net;
+            if (d.TryGetValue("internetOn", out net)) a.InternetOn = ParseNet(net);
+            if (d.TryGetValue("internetOff", out net)) a.InternetOff = ParseNet(net);
             return a;
+        }
+
+        static NetSpec ParseNet(object value)
+        {
+            var d = value as Dictionary<string, object>;
+            var spec = new NetSpec();
+            if (d == null) return spec;
+            spec.Prepend = StringList(d, "prepend");
+            spec.Append = StringList(d, "append");
+            spec.ExtendFlag = Str(d, "extendFlag");
+            spec.Extend = Str(d, "extend");
+            spec.SetFlag = Str(d, "setFlag");
+            spec.Set = Str(d, "set");
+            return spec;
+        }
+
+        static List<string> StringList(Dictionary<string, object> d, string key)
+        {
+            var list = new List<string>();
+            object v;
+            if (!d.TryGetValue(key, out v) || !(v is IEnumerable) || v is string) return list;
+            foreach (object item in (IEnumerable)v)
+                if (item != null) list.Add(Convert.ToString(item, CultureInfo.InvariantCulture));
+            return list;
         }
 
         public static void ApplyDefaults(Agent a)
