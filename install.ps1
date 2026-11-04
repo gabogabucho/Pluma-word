@@ -128,11 +128,17 @@ try {
     # con atajos globales de drivers (AMD Adrenalin), que tienen prioridad sobre Word.
     $keyCode = $word.BuildKeyCode(13, [ref]1024)   # wdKeyReturn + wdKeyAlt
     $word.KeyBindings.Add(1, 'EnviarAClaude', $keyCode) | Out-Null
+    # Detener no tiene atajo propio: Alt+Enter alterna (ver EnviarAClaude). Alt+Shift+Enter
+    # no llegaba a Word en su PC: Windows usa Alt+Shift para cambiar el idioma del teclado.
 
-    $btn = $word.CommandBars.Item('Text').Controls.Add(1)   # msoControlButton
+    $menu = $word.CommandBars.Item('Text')
+    $btn = $menu.Controls.Add(1)   # msoControlButton
     $btn.Caption = 'Enviar a Claude'
     $btn.OnAction = 'EnviarAClaude'
     $btn.BeginGroup = $true
+    $stop = $menu.Controls.Add(1)
+    $stop.Caption = 'Detener Claude'
+    $stop.OnAction = 'DetenerClaude'
 
     # Late binding: con [ref] PowerShell pasa el string envuelto en PSObject y COM lo rechaza.
     $saveArgs = [object[]]@([string]$tmpDotm, 15)   # 15 = wdFormatXMLTemplateMacroEnabled

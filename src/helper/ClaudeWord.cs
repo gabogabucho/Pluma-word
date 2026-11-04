@@ -9,6 +9,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
@@ -26,7 +27,7 @@ namespace ClaudeWord
     {
         const string TagPrefix = "claude-";
         const int TickMs = 40;
-        const int ColorStatus = 16777215;       // blanco: los avisos de estado no se ven
+        const int ColorStatus = 15263976;       // #E8E8E8: avisos de estado, se ven apenas
         const int ColorAutomatic = -16777216;   // wdColorAutomatic, si no se sabe el color de ella
         const string StatusReading = "✳ Claude está leyendo el contexto…";
 
@@ -98,6 +99,7 @@ namespace ClaudeWord
             string shown = null;          // lo que esta escrito ahora en el bloque
             bool showingStatus = false;
             long firstTextAt = -1;        // cuando llego la primera palabra
+            long lastBeat = -1000;
             string target = "";
 
             // La respuesta llega de Claude a su ritmo; el Typewriter decide cuanto
@@ -118,6 +120,23 @@ namespace ClaudeWord
                     Log("bloque borrado: se cancela");
                     Kill(p);
                     DeleteVariables(doc, tag);
+                    return 0;
+                }
+
+                // Latido para la macro (asi sabe que hay alguien atendiendo el bloque).
+                if (clock.ElapsedMilliseconds - lastBeat >= 1000)
+                {
+                    SetVariable(doc, tag + "-hb", DateTime.Now.ToOADate().ToString(CultureInfo.InvariantCulture));
+                    lastBeat = clock.ElapsedMilliseconds;
+                }
+
+                // Detener (Alt+Enter en curso o menu): se corta Claude y se conserva lo ya escrito.
+                if (ReadVariable(doc, tag + "-stop") != null)
+                {
+                    Log("detenido por ella");
+                    Kill(p);
+                    if (shown == null || showingStatus) FinishEmpty(doc, tag);
+                    else Finish(doc, tag, shown + " …");
                     return 0;
                 }
 
@@ -381,12 +400,45 @@ namespace ClaudeWord
                 {
                     if (text != null) WriteBlock(cc, text, answerColor);
                     cc.LockContents = false;
+                    // Marcador oculto sobre la respuesta: la macro corta ahi el bloque, asi
+                    // una pregunta escrita justo debajo no arrastra la respuesta anterior.
+                    try { doc.Bookmarks.Add("_claude_r" + tag.Substring(TagPrefix.Length), cc.Range); }
+                    catch (Exception ex) { Log("marcador de respuesta: " + ex.Message); }
                     cc.Delete(false);
                 }
             }
             catch (Exception ex) { Log("finish: " + ex.Message); }
             DeleteVariables(doc, tag);
             try { doc.Application.StatusBar = " "; } catch { }
+        }
+
+        // Detenido antes de la primera palabra: se quita el bloque y su renglon vacio.
+        static void FinishEmpty(dynamic doc, string tag)
+        {
+            try
+            {
+                dynamic cc = GetBlock(doc, tag);
+                if (cc != null)
+                {
+                    dynamic par = cc.Range.Paragraphs.First.Range;
+                    cc.LockContents = false;
+                    cc.Delete(true);
+                    string rest = par.Text;
+                    if (rest.Trim('\r', ' ').Length == 0) par.Delete();
+                }
+            }
+            catch (Exception ex) { Log("finish vacio: " + ex.Message); }
+            DeleteVariables(doc, tag);
+            try { doc.Application.StatusBar = " "; } catch { }
+        }
+
+        static void SetVariable(dynamic doc, string name, string value)
+        {
+            try { doc.Variables.Item(name).Value = value; }
+            catch
+            {
+                try { doc.Variables.Add(name, value); } catch { }
+            }
         }
 
         static string ReadVariable(dynamic doc, string name)
@@ -397,7 +449,7 @@ namespace ClaudeWord
 
         static void DeleteVariables(dynamic doc, string tag)
         {
-            foreach (string suffix in new[] { "-text", "-instr", "-color" })
+            foreach (string suffix in new[] { "-text", "-instr", "-color", "-stop", "-hb" })
             {
                 try { doc.Variables.Item(tag + suffix).Delete(); } catch { }
             }

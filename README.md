@@ -4,7 +4,7 @@ Claude Code local dentro de Microsoft Word. No usa panel, popups ni terminal a l
 
 ## Uso
 
-1. Seleccioná un párrafo, o dejá el cursor dentro de él.
+1. Dejá el cursor en el mensaje, o en la línea vacía de abajo. Un **mensaje** son los renglones seguidos con texto o imágenes: una línea en blanco separa un mensaje del siguiente. Si seleccionás, se envía exactamente la selección.
 2. Presioná **Alt+Enter**, o hacé clic derecho y elegí **Enviar a Claude**.
 3. La respuesta aparece **debajo**, en gris y en stream. Cuando termina, queda como texto normal.
 
@@ -21,7 +21,7 @@ La línea `@claude` se borra sola. Si no hay línea `@claude`, se aplica la **ta
 
 **Formato:** la respuesta copia el estilo, la fuente, el tamaño, el color y la alineación del texto de ella. Si ella escribió un título o un ítem de lista, la respuesta va en estilo Normal.
 
-Para **cancelar**, poné el cursor dentro del bloque gris y volvé a presionar el atajo.
+Para **detener** una respuesta, volvé a presionar **Alt+Enter** en cualquier lugar del documento, o hacé clic derecho y elegí **Detener Claude**. Mientras hay una respuesta en curso, Alt+Enter detiene en lugar de enviar, como el botón de Claude. Lo ya escrito se conserva y termina en " …". Si Claude todavía estaba pensando, el bloque desaparece. Si Word se cerró a mitad de una respuesta, "Detener" cierra el bloque que quedó.
 
 ## Arquitectura
 
