@@ -6,7 +6,7 @@
       "enabled": true,
       "label": "Claude",
       "command": "claude",
-      "note": "Con internet se agregan WebSearch y WebFetch a --tools. Bash, Write y Edit no se agregan.",
+      "note": "Con internet, --tools suma WebSearch y WebFetch y --allowedTools les da permiso (en -p, sin eso, quedan denegadas). WebFetch(domain:*) permite cualquier URL. Bash, Write y Edit no entran.",
       "internetOn": { "extendFlag": "--tools", "extend": "WebSearch,WebFetch" },
       "args": [
         "-p",
@@ -89,7 +89,7 @@
       "enabled": true,
       "label": "Grok",
       "command": "grok",
-      "note": "No lee stdin: --prompt-file. --yolo se sacó: aprueba cualquier herramienta, shell incluido. Quedan --tools de solo lectura, --disallowed-tools de shell/edición y --deny Bash, Edit, Write y MCPTool. --always-approve evita que se cuelgue pidiendo permiso por lo que sí está permitido; los deny ganan igual. Con internet se suman web_search y web_fetch al allowlist. Sin imágenes.",
+      "note": "No lee stdin: --prompt-file. --tools solo publica herramientas; --always-approve les da permiso y --deny Bash, Edit, Write y MCPTool sigue bloqueando shell y edición. --yolo se sacó. Con internet, web_search y web_fetch entran al allowlist y quedan aprobadas. Sin imágenes.",
       "args": [
         "--no-auto-update",
         "--verbatim",
@@ -124,7 +124,7 @@
       "enabled": true,
       "label": "Hermes",
       "command": "hermes",
-      "note": "Headless: hermes chat --oneshot --query-file --format stream-json. --yolo se sacó: el texto de ayuda dice que aprueba comandos peligrosos, y el toolset por defecto incluye terminal y write_file. --toolsets reemplaza ese conjunto. Con internet queda solo web (web_search y web_extract). Sin internet queda todo, que no toca archivos, shell ni la web. --image acepta una sola imagen.",
+      "note": "Headless: hermes chat --oneshot --query-file --format stream-json. --toolsets reemplaza el conjunto por defecto (que trae terminal y write_file): con internet solo web, y esas herramientas no pasan por el pedido de aprobación de comandos. --yolo se sacó porque ese sí aprueba la shell. Sin internet el toolset es todo. --image acepta una sola imagen.",
       "args": [
         "chat",
         "--oneshot",

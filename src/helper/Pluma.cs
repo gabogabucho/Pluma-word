@@ -567,15 +567,53 @@ namespace Pluma
         {
             NetSpec spec = internet ? agent.InternetOn : agent.InternetOff;
             if (spec == null) spec = DefaultInternet(agent.Id, internet);
-            if (spec == null) return;
-            if (spec.Prepend != null)
+            if (spec != null)
             {
-                for (int i = spec.Prepend.Count - 1; i >= 0; i--) args.Insert(0, spec.Prepend[i]);
+                if (spec.Prepend != null)
+                {
+                    for (int i = spec.Prepend.Count - 1; i >= 0; i--) args.Insert(0, spec.Prepend[i]);
+                }
+                if (!string.IsNullOrEmpty(spec.ExtendFlag)) ExtendFlag(args, spec.ExtendFlag, spec.Extend);
+                if (!string.IsNullOrEmpty(spec.SetFlag)) SetFlag(args, spec.SetFlag, spec.Set);
+                if (spec.Append != null) args.AddRange(spec.Append);
             }
-            if (!string.IsNullOrEmpty(spec.ExtendFlag)) ExtendFlag(args, spec.ExtendFlag, spec.Extend);
-            if (!string.IsNullOrEmpty(spec.SetFlag)) SetFlag(args, spec.SetFlag, spec.Set);
-            if (spec.Append != null) args.AddRange(spec.Append);
+            // --tools las hace disponibles. En claude -p, sin --allowedTools,
+            // el permiso queda denegado y Claude dice que no tiene web.
+            PermitTools(args, agent.Id);
             LockDown(args, agent.Id);
+        }
+
+        static void PermitTools(List<string> args, string id)
+        {
+            if (id != "claude") return;
+            string tools = ValueAfter(args, "--tools");
+            if (string.IsNullOrEmpty(tools)) tools = "Read,Glob,Grep,Skill";
+            SetFlag(args, "--allowedTools", ClaudeAllowed(tools));
+        }
+
+        static string ValueAfter(List<string> args, string flag)
+        {
+            for (int i = 0; i < args.Count - 1; i++)
+                if (args[i] == flag) return args[i + 1];
+            return null;
+        }
+
+        // Solo lo que Pluma ofrece. WebFetch(domain:*) es el permiso de cualquier
+        // URL: el nombre pelado WebFetch no alcanza para salir de los dominios precargados.
+        static string ClaudeAllowed(string tools)
+        {
+            string[] ok = new[] { "Read", "Glob", "Grep", "Skill", "WebSearch", "WebFetch" };
+            var keep = new List<string>();
+            foreach (string name in ok)
+            {
+                if (HasToken(tools, name) && !HasToken(string.Join(",", keep.ToArray()), name)) keep.Add(name);
+            }
+            if (keep.Count == 0) keep.Add("Read");
+            bool fetch = false;
+            foreach (string name in keep) if (name == "WebFetch") fetch = true;
+            string list = string.Join(",", keep.ToArray());
+            if (fetch) list += ",WebFetch(domain:*)";
+            return list;
         }
 
         // --yolo aprueba cualquier herramienta, shell incluido. En Grok y Hermes
@@ -708,7 +746,7 @@ namespace Pluma
             {
                 foreach (char c in s)
                 {
-                    if (c == ' ' || c == '\t' || c == '"' || c == '\n' || c == '\r') { need = true; break; }
+                    if (c == ' ' || c == '\t' || c == '"' || c == '\n' || c == '\r' || c == '(' || c == ')') { need = true; break; }
                 }
             }
             if (!need) return s;
@@ -1372,9 +1410,11 @@ namespace Pluma
                 failed += Expect("launch model", launch.Arguments.IndexOf("--model sonnet", StringComparison.Ordinal) >= 0 ? "si" : "no", "si");
                 failed += Expect("launch rules", launch.Arguments.IndexOf("--append-system-prompt-file", StringComparison.Ordinal) >= 0 ? "si" : "no", "si");
                 failed += Expect("launch tools", launch.Arguments.IndexOf("--tools Read,Glob,Grep,Skill,WebSearch,WebFetch", StringComparison.Ordinal) >= 0 ? "si" : "no", "si");
+                failed += Expect("launch allowed", launch.Arguments.IndexOf("--allowedTools \"Read,Glob,Grep,Skill,WebSearch,WebFetch,WebFetch(domain:*)\"", StringComparison.Ordinal) >= 0 ? "si" : "no", "si");
                 failed += Expect("launch sin bash", launch.Arguments.IndexOf("Bash", StringComparison.Ordinal) >= 0 ? "si" : "no", "no");
                 Launch offline = BuildLaunch(claude, cfg, dir, cfg.ClaudePath, composed, new List<string>(), null, false);
                 failed += Expect("launch sin web", offline.Arguments.IndexOf("WebSearch", StringComparison.Ordinal) >= 0 ? "si" : "no", "no");
+                failed += Expect("launch allowed local", offline.Arguments.IndexOf("--allowedTools Read,Glob,Grep,Skill", StringComparison.Ordinal) >= 0 ? "si" : "no", "si");
                 failed += Expect("launch env", launch.Env.ContainsKey("CLAUDE_CONFIG_DIR") ? launch.Env["CLAUDE_CONFIG_DIR"] : "-", cfg.ClaudeConfigDir);
 
                 Agent otro = new Agent();

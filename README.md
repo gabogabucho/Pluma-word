@@ -115,7 +115,7 @@ Clic derecho → **Pluma → Configuración…**, el acceso directo **Pluma** de
 Es una ventana de WinForms, sin dependencias aparte de .NET Framework (el que ya usa Word). Ahí se elige:
 
 - el **agente por defecto**, solo entre los que quedaron habilitados en `agents.json` (los que el instalador detectó);
-- **Permitir internet**, tildada por defecto. Con eso Claude suma WebSearch y WebFetch; el resto usa la búsqueda o lectura web de cada CLI, si el modo headless la tiene. Sigue prohibido editar archivos y correr comandos. El detalle está en el `note` de cada agente. Si la respuesta usa la web, tiene que citar la fuente en una línea al final;
+- **Permitir internet**, tildada por defecto. Claude suma WebSearch y WebFetch y los autoriza con `--allowedTools` (en `-p`, listarlos en `--tools` no alcanza). El resto usa el permiso de web de cada CLI. Sigue prohibido editar archivos y correr comandos. Si la respuesta usa la web, cita la fuente en una línea al final;
 - el **atajo** (hacé clic en el cuadro y presioná la combinación; de fábrica es Alt+Enter);
 - el **color del texto mientras se escribe** la respuesta. Al terminar, el párrafo vuelve al color del texto de origen.
 
