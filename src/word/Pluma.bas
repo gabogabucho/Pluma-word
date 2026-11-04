@@ -6,14 +6,16 @@ Attribute VB_Name = "Pluma"
 '
 '   - Una linea "@agente <instruccion>" elige el agente y, si hay texto
 '     despues, esa es la instruccion (la linea se borra). Sin esa linea
-'     se usa el agente por defecto de agents.json.
+'     se usa el agente de settings.json (Configuracion) y, si no hay,
+'     el de agents.json.
 '   - Las tareas del menu (corregir, formal, resumir, expandir, traducir)
 '     mandan su id; el helper lee el texto en tasks.json.
 '   - Las imagenes en linea del rango tambien se envian si el agente puede.
 '   - La respuesta copia el formato del texto (estilo, fuente, color).
 '   - La respuesta se escribe en un bloque protegido hasta que termina.
-'   - Alt+Enter alterna: con una respuesta en curso la detiene.
-'     (Alt+Shift+Enter no sirve: Windows usa Alt+Shift para el idioma.)
+'   - El atajo (de fabrica Alt+Enter) alterna: con una respuesta en
+'     curso la detiene. Sale de settings.json. Alt+Shift lo usa Windows
+'     para cambiar el idioma, asi que no llega a Word.
 '
 ' La escritura en stream la hace Pluma.exe (proceso oculto) via COM.
 ' Este archivo es ASCII a proposito: la importacion de VBA no soporta UTF-8.
@@ -53,6 +55,37 @@ Public Sub TareaTraducir()
     Enviar "traducir", False
 End Sub
 
+Public Sub ConfigurarPluma()
+    On Error GoTo Fallo
+    Dim exe As String
+    exe = Environ$("LOCALAPPDATA") & "\Pluma\Pluma.exe"
+    If Len(Dir$(exe)) = 0 Then
+        Application.StatusBar = "Pluma no est" & ChrW(225) & " instalado en esta PC."
+        Exit Sub
+    End If
+    Shell """" & exe & """ --config", vbNormalFocus
+    Exit Sub
+Fallo:
+    Application.StatusBar = "Pluma: " & Err.Description
+End Sub
+
+' Al abrir Word, y cuando la ventana de configuracion lo pide.
+Public Sub AutoExec()
+    AplicarAjustesPluma
+End Sub
+
+Public Sub AplicarAjustesPluma()
+    On Error GoTo Fin
+    Dim carpeta As String, json As String, atajo As String
+    carpeta = RutaWorkspace()
+    If Len(carpeta) = 0 Then Exit Sub
+    json = LeerArchivo(carpeta & "\settings.json")
+    atajo = ValorJsonString(json, "shortcut")
+    If Len(atajo) = 0 Then atajo = "Alt+Enter"
+    AplicarAtajo atajo
+Fin:
+End Sub
+
 Private Sub Enviar(ByVal tarea As String, ByVal permiteDetener As Boolean)
     On Error GoTo Fallo
     If Documents.Count = 0 Then Exit Sub
@@ -70,8 +103,10 @@ Private Sub Enviar(ByVal tarea As String, ByVal permiteDetener As Boolean)
         Exit Sub
     End If
 
-    Dim ids As String
+    Dim ids As String, ajustes As String, carpeta As String
     ids = IdsDeAgentes()
+    carpeta = RutaWorkspace()
+    If Len(carpeta) > 0 Then ajustes = LeerArchivo(carpeta & "\settings.json")
 
     Dim instruccion As String, texto As String, linea As String, agente As String
     Dim ancla As Range, p As Paragraph, fuente As Range
@@ -107,6 +142,13 @@ Private Sub Enviar(ByVal tarea As String, ByVal permiteDetener As Boolean)
         Exit Sub
     End If
     If Len(texto) > MAX_CHARS Then texto = Left$(texto, MAX_CHARS)
+    If Len(agente) = 0 Then
+        Dim pref As String
+        pref = ValorJsonString(ajustes, "defaultAgent")
+        If Len(pref) > 0 Then agente = LCase$(pref)
+    End If
+    Dim tinta As String
+    tinta = ValorJsonNumero(ajustes, "streamColor")
 
     Dim i As Long
     paso = "borrar mencion"
@@ -143,6 +185,7 @@ Private Sub Enviar(ByVal tarea As String, ByVal permiteDetener As Boolean)
     If Len(instruccion) > 0 Then doc.Variables.Add TAG_PREFIX & id & "-instr", instruccion
     If Len(agente) > 0 Then doc.Variables.Add TAG_PREFIX & id & "-agent", agente
     If Len(tarea) > 0 And Len(instruccion) = 0 Then doc.Variables.Add TAG_PREFIX & id & "-task", tarea
+    If Len(tinta) > 0 Then doc.Variables.Add TAG_PREFIX & id & "-ink", tinta
     doc.Variables.Add TAG_PREFIX & id & "-color", CStr(ColorDelTexto(ancla))
 
     Dim exe As String
@@ -251,7 +294,7 @@ Private Sub CerrarHuerfano(doc As Document, ByVal tag As String)
         End If
     End If
     Dim sufijo As Variant
-    For Each sufijo In Array("-text", "-instr", "-color", "-stop", "-hb", "-agent", "-task")
+    For Each sufijo In Array("-text", "-instr", "-color", "-stop", "-hb", "-agent", "-task", "-ink")
         doc.Variables(tag & sufijo).Delete
     Next sufijo
     doc.Bookmarks("_pluma_" & Mid$(tag, Len(TAG_PREFIX) + 1)).Delete
@@ -480,6 +523,104 @@ Private Function LeerArchivo(ByVal ruta As String) As String
     LeerArchivo = Space$(n)
     Get #f, , LeerArchivo
     Close #f
+Fin:
+End Function
+
+Private Sub AplicarAtajo(ByVal atajo As String)
+    On Error GoTo Fin
+    Dim t As Template
+    Set t = PlantillaPluma()
+    If t Is Nothing Then Exit Sub
+    Dim anterior As Object
+    Set anterior = CustomizationContext
+    CustomizationContext = t
+    Dim i As Long
+    For i = KeyBindings.Count To 1 Step -1
+        If StrComp(KeyBindings(i).Command, "EnviarAPluma", vbTextCompare) = 0 Then KeyBindings(i).Clear
+    Next i
+    Dim code As Long
+    code = CodigoAtajo(atajo)
+    If code <> 0 Then KeyBindings.Add 1, "EnviarAPluma", code
+    On Error Resume Next
+    t.Save
+    CustomizationContext = anterior
+Fin:
+End Sub
+
+Private Function PlantillaPluma() As Template
+    Dim t As Template
+    For Each t In Application.Templates
+        If StrComp(t.Name, "Pluma.dotm", vbTextCompare) = 0 Then
+            Set PlantillaPluma = t
+            Exit Function
+        End If
+    Next t
+End Function
+
+' "Ctrl+Alt+Enter" -> BuildKeyCode. Alt=1024, Ctrl=512, Shift=256, Enter=13.
+Private Function CodigoAtajo(ByVal s As String) As Long
+    Dim partes() As String, i As Long, p As String
+    Dim alt As Boolean, ctrl As Boolean, shift As Boolean, tecla As Long
+    If Len(s) = 0 Then Exit Function
+    partes = Split(s, "+")
+    For i = 0 To UBound(partes)
+        p = LCase$(Trim$(partes(i)))
+        Select Case p
+            Case "alt": alt = True
+            Case "ctrl", "control": ctrl = True
+            Case "shift", "mayus": shift = True
+            Case "enter", "intro", "return": tecla = 13
+            Case "tab": tecla = 9
+            Case "espacio", "space": tecla = 32
+            Case "esc", "escape": tecla = 27
+            Case Else
+                If Len(p) = 1 Then
+                    tecla = Asc(UCase$(p))
+                ElseIf Left$(p, 1) = "f" Then
+                    Dim n As Long
+                    n = Val(Mid$(p, 2))
+                    If n >= 1 And n <= 12 Then tecla = 111 + n
+                End If
+        End Select
+    Next i
+    If tecla = 0 Then Exit Function
+    If Not alt And Not ctrl And Not shift Then Exit Function
+    If alt And ctrl And shift Then
+        CodigoAtajo = BuildKeyCode(tecla, 1024, 512, 256)
+    ElseIf alt And ctrl Then
+        CodigoAtajo = BuildKeyCode(tecla, 1024, 512)
+    ElseIf alt And shift Then
+        CodigoAtajo = BuildKeyCode(tecla, 1024, 256)
+    ElseIf ctrl And shift Then
+        CodigoAtajo = BuildKeyCode(tecla, 512, 256)
+    ElseIf alt Then
+        CodigoAtajo = BuildKeyCode(tecla, 1024)
+    ElseIf ctrl Then
+        CodigoAtajo = BuildKeyCode(tecla, 512)
+    Else
+        CodigoAtajo = BuildKeyCode(tecla, 256)
+    End If
+End Function
+
+Private Function ValorJsonString(ByVal json As String, ByVal clave As String) As String
+    On Error GoTo Fin
+    If Len(json) = 0 Or Len(clave) = 0 Then Exit Function
+    Dim re As Object, ms As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Pattern = """" & clave & """" & "\s*:\s*""([^""]*)"""
+    Set ms = re.Execute(json)
+    If ms.Count > 0 Then ValorJsonString = CStr(ms(0).SubMatches(0))
+Fin:
+End Function
+
+Private Function ValorJsonNumero(ByVal json As String, ByVal clave As String) As String
+    On Error GoTo Fin
+    If Len(json) = 0 Or Len(clave) = 0 Then Exit Function
+    Dim re As Object, ms As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Pattern = """" & clave & """" & "\s*:\s*(-?\d+)"
+    Set ms = re.Execute(json)
+    If ms.Count > 0 Then ValorJsonNumero = CStr(ms(0).SubMatches(0))
 Fin:
 End Function
 

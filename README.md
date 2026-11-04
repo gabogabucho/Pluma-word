@@ -5,7 +5,7 @@ Pluma mete un agente de escritura dentro de Microsoft Word. No usa panel, popups
 ## Uso
 
 1. Dejá el cursor en el mensaje, o en la línea vacía de abajo. Un **mensaje** son los renglones seguidos con texto o imágenes: una línea en blanco separa un mensaje del siguiente. Si seleccionás, se envía exactamente la selección.
-2. Presioná **Alt+Enter**, o hacé clic derecho y elegí **Pluma → Enviar**.
+2. Presioná **Alt+Enter** (es el atajo de fábrica; se cambia en Configuración), o hacé clic derecho y elegí **Pluma → Enviar**.
 3. La respuesta aparece **debajo**, en gris y en stream. Cuando termina, queda como texto normal.
 
 Para elegir agente e instrucción, escribí una línea dentro de la selección:
@@ -104,16 +104,36 @@ Después editá `PLUMA.md` y `context/estilo.md` en el workspace.
 
 Para desinstalar: `.\uninstall.ps1`. El workspace no se borra. Si había un `ClaudeWord.dotm` de una versión anterior, también se saca para que no se quede con Alt+Enter.
 
-## Configuración
+## Configuración en la ventana
 
-Está en `%LOCALAPPDATA%\Pluma\config.json`:
+Clic derecho → **Pluma → Configuración…**, el acceso directo **Pluma** del menú Inicio, o:
+
+```text
+%LOCALAPPDATA%\Pluma\Pluma.exe --config
+```
+
+Es una ventana de WinForms, sin dependencias aparte de .NET Framework (el que ya usa Word). Ahí se elige:
+
+- el **agente por defecto**, solo entre los que quedaron habilitados en `agents.json` (los que el instalador detectó);
+- el **atajo** (hacé clic en el cuadro y presioná la combinación; de fábrica es Alt+Enter);
+- el **color del texto mientras se escribe** la respuesta. Al terminar, el párrafo vuelve al color del texto de origen.
+
+**Guardar** escribe `settings.json` en el workspace. La macro lo lee: al abrir Word aplica el atajo, y en cada envío usa ese agente si no hay una mención `@agente` y, si lo tildaste, ese color mientras tipea. Si Word estaba abierto al guardar, el atajo se aplica en el momento.
+
+Al pie está el crédito **Hecho por @gabogabucho**, que abre https://x.com/gabogabucho.
+
+Para tener el ítem del menú y el acceso directo hace falta correr el instalador de nuevo (regenera `Pluma.dotm`).
+
+## Configuración del instalador
+
+El ritmo y las rutas siguen en `%LOCALAPPDATA%\Pluma\config.json`. El agente por defecto de esa pantalla pisa el `defaultAgent` de este archivo.
 
 | Clave | Uso |
 |---|---|
 | `claudePath` | Si el archivo existe, pisa el `command` de Claude en `agents.json` |
 | `workspace` | Carpeta con el rol, las tareas y `agents.json` |
 | `model` | Modelo de Claude si el agente no trae uno (`sonnet`, `opus`, etc.) |
-| `defaultAgent` | Id que se usa cuando el mensaje no tiene `@agente` |
+| `defaultAgent` | Respaldo si `settings.json` no elige agente |
 | `claudeConfigDir` | Opcional. Aísla la configuración de Claude (ver abajo) |
 | `timeoutSeconds` | Tiempo máximo por pedido (600 por defecto) |
 | `charsPerSecond` | Velocidad de tipeo de la respuesta (20). Más bajo = más lento |
@@ -135,10 +155,12 @@ El modelo de Codex, Gemini, Grok, Hermes o aider se pone en el agente (`"model":
 3. Tiene que listar los CLI que encontró y terminar con `Listo`.
 4. Opcional, sin abrir Word: `%LOCALAPPDATA%\Pluma\Pluma.exe --self-test`. Tiene que imprimir `self-test ok` y devolver código 0. Prueba los parsers (incluido Grok y Hermes), el armado del prompt de Claude y que `agents.json` coincide con el código. No habla con ningún CLI ni con Word.
 5. Abrí Word, escribí un párrafo y presioná Alt+Enter. Tiene que aparecer el estado en gris y después la respuesta.
-6. En otro párrafo, escribí `@grok resumí esto` (o `@hermes`, `@codex`, `@gemini`) y volvé a enviar. La línea de la mención desaparece.
-7. Seleccioná un párrafo, clic derecho → Pluma → Corregir. La respuesta tiene que corregir, no contestar como charla.
-8. Mientras escribe, Alt+Enter corta y deja lo ya escrito con " …".
-9. Si algo falla, el detalle queda en `%LOCALAPPDATA%\Pluma\logs\last.log` y, si falló la macro, en `macro.log`.
+6. Clic derecho → Pluma → Configuración… (o el acceso directo Pluma del menú Inicio). Elegí otro agente, un atajo (por ejemplo Ctrl+Enter), tildá el color y Guardar. Cerrá y abrí Word si el aviso dice que el atajo se aplica al abrirlo.
+7. Sin una línea `@agente`, el pedido tiene que ir al agente que elegiste, tipearse en ese color y quedar al final con el color del párrafo. El atajo nuevo tiene que enviar y, a mitad de respuesta, detener.
+8. En otro párrafo, escribí `@grok resumí esto` (o `@hermes`, `@codex`, `@gemini`) y volvé a enviar. La línea de la mención desaparece y esa mención pisa al agente por defecto.
+9. Seleccioná un párrafo, clic derecho → Pluma → Corregir. La respuesta tiene que corregir, no contestar como charla.
+10. Mientras escribe, el atajo corta y deja lo ya escrito con " …".
+11. Si algo falla, el detalle queda en `%LOCALAPPDATA%\Pluma\logs\last.log` y, si falló la macro, en `macro.log`. El archivo guardado es `settings.json`, al lado de `agents.json`.
 
 ## Diagnóstico
 

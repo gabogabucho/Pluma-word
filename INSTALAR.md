@@ -76,6 +76,8 @@ Abrí Word, escribí una pregunta, dejá el cursor en ese párrafo y presioná *
 
 Tiene que aparecer un aviso en gris muy claro y, después, la respuesta escribiéndose.
 
+La configuración (agente por defecto, atajo y color mientras se escribe) está en clic derecho → **Pluma → Configuración…**, o en el acceso directo **Pluma** del menú Inicio. Si instalaste antes de esa ventana, volvé a correr `instalar.cmd` para que aparezcan el ítem y el acceso directo.
+
 Para otro agente, en el mismo párrafo:
 
 ```

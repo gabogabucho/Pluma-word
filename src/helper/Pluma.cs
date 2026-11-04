@@ -51,6 +51,7 @@ namespace Pluma
         static int Main(string[] args)
         {
             if (args.Length >= 1 && args[0] == "--self-test") return SelfTest();
+            if (args.Length >= 1 && args[0] == "--config") return ConfigApp.Run();
 
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             Directory.CreateDirectory(Path.Combine(baseDir, "logs"));
@@ -88,6 +89,13 @@ namespace Pluma
             string taskId = ReadVariable(doc, tag + "-task");
             int color;
             if (int.TryParse((string)ReadVariable(doc, tag + "-color"), out color)) answerColor = color;
+            Settings ui = Settings.Load(string.IsNullOrEmpty(cfg.Workspace) ? null : Path.Combine(cfg.Workspace, "settings.json"));
+            int typingColor = answerColor;
+            int inkParsed;
+            if (int.TryParse(ReadVariable(doc, tag + "-ink"), NumberStyles.Integer, CultureInfo.InvariantCulture, out inkParsed))
+                typingColor = inkParsed;
+            else if (ui.HasStreamColor)
+                typingColor = ui.StreamColor;
 
             AgentFile agents;
             try { agents = AgentFile.Load(Path.Combine(cfg.Workspace ?? "", "agents.json"), cfg); }
@@ -97,8 +105,11 @@ namespace Pluma
                 return 4;
             }
 
-            if (string.IsNullOrEmpty(agentId) && !string.IsNullOrEmpty(cfg.DefaultAgent))
-                agentId = cfg.DefaultAgent;
+            if (string.IsNullOrEmpty(agentId))
+            {
+                if (!string.IsNullOrEmpty(ui.DefaultAgent)) agentId = ui.DefaultAgent;
+                else if (!string.IsNullOrEmpty(cfg.DefaultAgent)) agentId = cfg.DefaultAgent;
+            }
             Agent agent = agents.Resolve(agentId);
             if (agent == null)
             {
@@ -273,9 +284,9 @@ namespace Pluma
                             if (visible != shown)
                             {
                                 if (shown != null && !showingStatus && visible.StartsWith(shown, StringComparison.Ordinal))
-                                    AppendBlock(cc, visible.Substring(shown.Length));
+                                    AppendBlock(cc, visible.Substring(shown.Length), typingColor);
                                 else
-                                    WriteBlock(cc, visible, answerColor);
+                                    WriteBlock(cc, visible, typingColor);
                                 shown = visible;
                                 showingStatus = false;
                             }
@@ -992,10 +1003,11 @@ namespace Pluma
             cc.LockContents = true;
         }
 
-        static void AppendBlock(dynamic cc, string suffix)
+        static void AppendBlock(dynamic cc, string suffix, int color)
         {
             cc.LockContents = false;
             cc.Range.InsertAfter(suffix);
+            cc.Range.Font.Color = color;
             cc.LockContents = true;
         }
 
@@ -1006,8 +1018,9 @@ namespace Pluma
                 dynamic cc = GetBlock(doc, tag);
                 if (cc != null)
                 {
-                    if (text != null) WriteBlock(cc, text, color);
                     cc.LockContents = false;
+                    if (text != null) cc.Range.Text = text;
+                    try { cc.Range.Font.Color = color; } catch { }
                     try { doc.Bookmarks.Add("_pluma_r" + tag.Substring(TagPrefix.Length), cc.Range); }
                     catch (Exception ex) { Log("marcador de respuesta: " + ex.Message); }
                     cc.Delete(false);
@@ -1054,7 +1067,7 @@ namespace Pluma
 
         static void DeleteVariables(dynamic doc, string tag)
         {
-            foreach (string suffix in new[] { "-text", "-instr", "-color", "-stop", "-hb", "-agent", "-task" })
+            foreach (string suffix in new[] { "-text", "-instr", "-color", "-stop", "-hb", "-agent", "-task", "-ink" })
             {
                 try { doc.Variables.Item(tag + suffix).Delete(); } catch { }
             }
@@ -1117,6 +1130,10 @@ namespace Pluma
 
             failed += Expect("arg largo", PromptProblem(new Agent { PromptVia = "arg" }, new string('x', 7001)) == null ? "no" : "si", "si");
             failed += Expect("file sin flag", PromptProblem(new Agent { PromptVia = "file" }, "hola") == null ? "no" : "si", "si");
+            failed += Expect("atajo alt enter", Shortcut.Format(false, true, false, 13), "Alt+Enter");
+            failed += Expect("atajo ctrl alt", Shortcut.Format(true, true, false, 75), "Ctrl+Alt+K");
+            failed += Expect("atajo sin mod", Shortcut.Format(false, false, false, 65) == null ? "-" : "x", "-");
+            failed += Expect("color ole", UiColor.ToOle(Color.FromArgb(1, 2, 3)).ToString(CultureInfo.InvariantCulture), (1 | (2 << 8) | (3 << 16)).ToString(CultureInfo.InvariantCulture));
 
             ResetRun();
             var json = new JavaScriptSerializer();
@@ -1189,6 +1206,20 @@ namespace Pluma
                 failed += Expect("tarea archivo", LookupTask(dir, "corregir"), "Custom");
                 failed += Expect("tarea builtin", LookupTask(dir, "formal").IndexOf("formal", StringComparison.Ordinal) >= 0 ? "si" : "no", "si");
                 failed += Expect("tarea desconocida", LookupTask(dir, "no-existe") == null ? "-" : "x", "-");
+                var set = new Settings();
+                set.DefaultAgent = "grok";
+                set.Shortcut = "Ctrl+Enter";
+                set.HasStreamColor = true;
+                set.StreamColor = UiColor.ToOle(Color.FromArgb(1, 2, 3));
+                set.Save(Path.Combine(dir, "settings.json"));
+                Settings back = Settings.Load(Path.Combine(dir, "settings.json"));
+                failed += Expect("settings agent", back.DefaultAgent, "grok");
+                failed += Expect("settings atajo", back.Shortcut, "Ctrl+Enter");
+                failed += Expect("settings color", back.HasStreamColor && back.StreamColor == set.StreamColor ? "si" : "no", "si");
+                set.HasStreamColor = false;
+                set.Save(Path.Combine(dir, "settings.json"));
+                back = Settings.Load(Path.Combine(dir, "settings.json"));
+                failed += Expect("settings sin color", back.HasStreamColor ? "si" : "no", "no");
 
                 var cfg = new Config();
                 cfg.Workspace = dir;

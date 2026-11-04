@@ -17,5 +17,9 @@ finally {
 Remove-Item (Join-Path $startup 'Pluma.dotm') -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $startup 'ClaudeWord.dotm') -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $env:LOCALAPPDATA 'Pluma') -Recurse -Force -ErrorAction SilentlyContinue
+$programs = [Environment]::GetFolderPath('Programs')
+if ($programs) {
+    Remove-Item (Join-Path $programs 'Pluma.lnk') -ErrorAction SilentlyContinue
+}
 
 Write-Host 'Pluma desinstalado. El workspace quedo intacto.' -ForegroundColor Green

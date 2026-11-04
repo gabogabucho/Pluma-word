@@ -196,8 +196,9 @@ if (-not (Test-Path $csc)) { throw "No encuentro csc.exe de .NET Framework 4 ($c
 & $csc /nologo /target:winexe /codepage:65001 /optimize+ `
     "/out:$installDir\Pluma.exe" `
     /r:System.Web.Extensions.dll /r:Microsoft.CSharp.dll /r:System.Core.dll `
-    /r:System.Drawing.dll /r:System.Xml.dll `
-    "$root\src\helper\Pluma.cs"
+    /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Xml.dll `
+    "$root\src\helper\Pluma.cs" `
+    "$root\src\helper\PlumaConfig.cs"
 if ($LASTEXITCODE -ne 0) { throw 'Fallo la compilacion del helper.' }
 
 Copy-Item "$root\src\helper\word-rules.md" $installDir -Force
@@ -288,6 +289,7 @@ try {
     Add-PlumaButton $popup 'Resumir' 'TareaResumir' $false
     Add-PlumaButton $popup 'Expandir' 'TareaExpandir' $false
     Add-PlumaButton $popup 'Traducir' 'TareaTraducir' $false
+    Add-PlumaButton $popup ('Configuraci' + [char]0x00F3 + 'n...') 'ConfigurarPluma' $true
     Add-PlumaButton $popup 'Detener' 'DetenerPluma' $true
 
     $saveArgs = [object[]]@([string]$tmpDotm, 15)   # 15 = wdFormatXMLTemplateMacroEnabled
@@ -318,6 +320,18 @@ if (Test-Path $oldDotm) {
     Write-Host '    Saque ClaudeWord.dotm viejo para que no pise Alt+Enter.'
 }
 Write-Host "    $startup\Pluma.dotm"
+
+$programs = [Environment]::GetFolderPath('Programs')
+if ($programs) {
+    $shell = New-Object -ComObject WScript.Shell
+    $sc = $shell.CreateShortcut((Join-Path $programs 'Pluma.lnk'))
+    $sc.TargetPath = Join-Path $installDir 'Pluma.exe'
+    $sc.Arguments = '--config'
+    $sc.WorkingDirectory = $installDir
+    $sc.Description = 'Configuracion de Pluma'
+    $sc.Save()
+    Write-Host "    Menu Inicio: $programs\Pluma.lnk"
+}
 
 Write-Host ''
 Write-Host 'Listo. Abri Word, deja el cursor en un parrafo y presiona Alt+Enter' -ForegroundColor Green
