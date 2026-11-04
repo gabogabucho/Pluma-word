@@ -1,65 +1,93 @@
-Attribute VB_Name = "ClaudeWord"
-' Claude para Word
-' ----------------
-' Envia el parrafo seleccionado a Claude Code y la respuesta aparece
-' en stream debajo del parrafo. Todo ocurre dentro del documento:
+Attribute VB_Name = "Pluma"
+' Pluma para Word
+' ---------------
+' Envia el parrafo al agente elegido y la respuesta aparece en stream
+' debajo. Todo ocurre dentro del documento:
 '
-'   - Una linea "@claude <instruccion>" dentro de la seleccion es la
-'     instruccion (se borra del documento). Sin esa linea, Claude aplica
-'     la tarea por defecto definida en el CLAUDE.md del workspace.
-'   - Las imagenes en linea del rango tambien se envian (el helper las extrae).
-'   - La respuesta copia el formato del texto de ella (estilo, fuente, color).
-'   - La respuesta se escribe en un bloque protegido (control de
-'     contenido bloqueado, en gris) hasta que termina.
-'   - Alt+Enter alterna: con una respuesta en curso la detiene (DetenerClaude)
-'     y conserva lo ya escrito. Tambien desde el menu contextual.
-'     (Alt+Shift+Enter no sirve: Windows usa Alt+Shift para cambiar el idioma.)
+'   - Una linea "@agente <instruccion>" elige el agente y, si hay texto
+'     despues, esa es la instruccion (la linea se borra). Sin esa linea
+'     se usa el agente por defecto de agents.json.
+'   - Las tareas del menu (corregir, formal, resumir, expandir, traducir)
+'     mandan su id; el helper lee el texto en tasks.json.
+'   - Las imagenes en linea del rango tambien se envian si el agente puede.
+'   - La respuesta copia el formato del texto (estilo, fuente, color).
+'   - La respuesta se escribe en un bloque protegido hasta que termina.
+'   - Alt+Enter alterna: con una respuesta en curso la detiene.
+'     (Alt+Shift+Enter no sirve: Windows usa Alt+Shift para el idioma.)
 '
-' La escritura en stream la hace ClaudeWord.exe (proceso oculto) via COM.
-' Este archivo es ASCII a proposito: la importacion de VBA no soporta UTF-8,
-' los acentos van con ChrW().
+' La escritura en stream la hace Pluma.exe (proceso oculto) via COM.
+' Este archivo es ASCII a proposito: la importacion de VBA no soporta UTF-8.
 
 Option Explicit
 
-Private Const TAG_PREFIX As String = "claude-"
-Private Const INSTR_PREFIX As String = "@claude"
+Private Const TAG_PREFIX As String = "pluma-"
 Private Const MAX_CHARS As Long = 60000
-Private Const MAX_PARRAFOS As Long = 40               ' tope del bloque automatico
-Private Const RESP_PREFIX As String = "_claude_r"     ' marcador de respuesta terminada
-Private Const WD_COLOR_STATUS As Long = 15263976      ' #E8E8E8: se ve apenas, pero se ve
-Private Const WD_CC_HIDDEN As Long = 2                 ' wdContentControlHidden
+Private Const MAX_PARRAFOS As Long = 40
+Private Const RESP_PREFIX As String = "_pluma_r"
+Private Const WD_COLOR_STATUS As Long = 15263976
+Private Const WD_CC_HIDDEN As Long = 2
 
-Private paso As String   ' ultimo paso de EnviarAClaude, para el log de errores
+Private paso As String
 
-Public Sub EnviarAClaude()
+Public Sub EnviarAPluma()
+    Enviar "", True
+End Sub
+
+Public Sub TareaCorregir()
+    Enviar "corregir", False
+End Sub
+
+Public Sub TareaFormal()
+    Enviar "formal", False
+End Sub
+
+Public Sub TareaResumir()
+    Enviar "resumir", False
+End Sub
+
+Public Sub TareaExpandir()
+    Enviar "expandir", False
+End Sub
+
+Public Sub TareaTraducir()
+    Enviar "traducir", False
+End Sub
+
+Private Sub Enviar(ByVal tarea As String, ByVal permiteDetener As Boolean)
     On Error GoTo Fallo
     If Documents.Count = 0 Then Exit Sub
 
     Dim doc As Document
     Set doc = ActiveDocument
 
-    ' Alt+Enter alterna, como el boton de Claude: con una respuesta en curso, la detiene.
     paso = "detener"
     If HayEnCurso(doc) Then
-        DetenerClaude
+        If permiteDetener Then
+            DetenerPluma
+        Else
+            Application.StatusBar = "Pluma est" & ChrW(225) & " respondiendo. Presion" & ChrW(225) & " Alt+Enter para detener."
+        End If
         Exit Sub
     End If
 
-    Dim instruccion As String, texto As String, linea As String
+    Dim ids As String
+    ids = IdsDeAgentes()
+
+    Dim instruccion As String, texto As String, linea As String, agente As String
     Dim ancla As Range, p As Paragraph, fuente As Range
     Dim aBorrar As New Collection
     Dim imagenes As Long
+    Dim esteAgente As String, resto As String
 
     paso = "leer seleccion"
-    Set fuente = RangoAEnviar().Duplicate
+    Set fuente = RangoAEnviar(ids).Duplicate
     For Each p In fuente.Paragraphs
         linea = LimpiarLinea(p.Range.Text)
-        If EsInstruccion(linea) Then
-            instruccion = Trim$(Mid$(linea, Len(INSTR_PREFIX) + 1))
-            If Left$(instruccion, 1) = ":" Then instruccion = Trim$(Mid$(instruccion, 2))
+        If SepararAgente(linea, ids, esteAgente, resto) Then
+            agente = esteAgente
+            If Len(resto) > 0 Then instruccion = resto
             aBorrar.Add p.Range
         Else
-            ' Word representa cada imagen en linea con un caracter "/" en .Text.
             If p.Range.InlineShapes.Count > 0 Then
                 imagenes = imagenes + p.Range.InlineShapes.Count
                 If Len(Replace(Replace(linea, "/", ""), " ", "")) = 0 Then linea = ""
@@ -74,14 +102,14 @@ Public Sub EnviarAClaude()
 
     paso = "validar"
     If ancla Is Nothing Then
-        Application.StatusBar = "Claude: no hay texto ni im" & ChrW(225) & "genes para enviar."
+        Application.StatusBar = "Pluma: no hay texto ni im" & ChrW(225) & "genes para enviar."
         LogMacro "nada para enviar (seleccion tipo " & Selection.Type & ")"
         Exit Sub
     End If
     If Len(texto) > MAX_CHARS Then texto = Left$(texto, MAX_CHARS)
 
     Dim i As Long
-    paso = "borrar @claude"
+    paso = "borrar mencion"
     For i = aBorrar.Count To 1 Step -1
         aBorrar(i).Delete
     Next i
@@ -90,12 +118,9 @@ Public Sub EnviarAClaude()
     Randomize
     id = Format$(Now, "yyyymmddhhnnss") & CStr(Int(Rnd * 100000))
 
-    ' Con imagenes, el helper extrae el rango enviado via WordOpenXML.
-    ' Marcador oculto (empieza con "_"): no aparece en el dialogo de marcadores.
     paso = "marcador"
-    If imagenes > 0 Then doc.Bookmarks.Add "_claude_" & id, fuente
+    If imagenes > 0 Then doc.Bookmarks.Add "_pluma_" & id, fuente
 
-    ' Parrafo nuevo debajo del ancla, con el formato del texto de ella.
     paso = "parrafo nuevo"
     ancla.InsertParagraphAfter
     Dim destino As Range
@@ -107,8 +132,8 @@ Public Sub EnviarAClaude()
     paso = "bloque"
     Set cc = doc.ContentControls.Add(wdContentControlRichText, destino)
     cc.Tag = TAG_PREFIX & id
-    cc.Title = "Claude"
-    cc.Range.Text = ChrW(10035) & " Claude est" & ChrW(225) & " pensando" & ChrW(8230)
+    cc.Title = "Pluma"
+    cc.Range.Text = ChrW(10035) & " Pluma est" & ChrW(225) & " pensando" & ChrW(8230)
     cc.Appearance = WD_CC_HIDDEN
     cc.Range.Font.Color = WD_COLOR_STATUS
     cc.LockContents = True
@@ -116,33 +141,33 @@ Public Sub EnviarAClaude()
     paso = "variables"
     If Len(texto) > 0 Then doc.Variables.Add TAG_PREFIX & id & "-text", texto
     If Len(instruccion) > 0 Then doc.Variables.Add TAG_PREFIX & id & "-instr", instruccion
+    If Len(agente) > 0 Then doc.Variables.Add TAG_PREFIX & id & "-agent", agente
+    If Len(tarea) > 0 And Len(instruccion) = 0 Then doc.Variables.Add TAG_PREFIX & id & "-task", tarea
     doc.Variables.Add TAG_PREFIX & id & "-color", CStr(ColorDelTexto(ancla))
 
     Dim exe As String
-    exe = Environ$("LOCALAPPDATA") & "\ClaudeWord\ClaudeWord.exe"
+    exe = Environ$("LOCALAPPDATA") & "\Pluma\Pluma.exe"
     If Len(Dir$(exe)) = 0 Then
         cc.LockContents = False
-        cc.Range.Text = "Claude no est" & ChrW(225) & " instalado en esta PC."
+        cc.Range.Text = "Pluma no est" & ChrW(225) & " instalado en esta PC."
         cc.Delete False
         Exit Sub
     End If
 
     paso = "lanzar helper"
     Shell """" & exe & """ " & id, vbHide
-    Application.StatusBar = "Claude est" & ChrW(225) & " escribiendo" & ChrW(8230)
+    Application.StatusBar = "Pluma est" & ChrW(225) & " escribiendo" & ChrW(8230)
     Exit Sub
 
 Fallo:
-    Application.StatusBar = "Claude: " & Err.Description
+    Application.StatusBar = "Pluma: " & Err.Description
     LogMacro "error en '" & paso & "': " & Err.Number & " " & Err.Description
 End Sub
 
-' Errores de la macro en %LOCALAPPDATA%\ClaudeWord\logs\macro.log (la barra de
-' estado se borra enseguida y es facil no verla).
 Private Sub LogMacro(ByVal msg As String)
     On Error Resume Next
     Dim dir_ As String, f As Integer
-    dir_ = Environ$("LOCALAPPDATA") & "\ClaudeWord\logs"
+    dir_ = Environ$("LOCALAPPDATA") & "\Pluma\logs"
     If Len(Dir$(dir_, vbDirectory)) = 0 Then Exit Sub
     f = FreeFile
     Open dir_ & "\macro.log" For Append As #f
@@ -150,9 +175,7 @@ Private Sub LogMacro(ByVal msg As String)
     Close #f
 End Sub
 
-' Detiene las respuestas en curso del documento activo y conserva lo ya escrito.
-' Con el cursor dentro de un bloque, detiene solo ese; si no, todos.
-Public Sub DetenerClaude()
+Public Sub DetenerPluma()
     On Error GoTo Fallo
     If Documents.Count = 0 Then Exit Sub
 
@@ -166,7 +189,7 @@ Public Sub DetenerClaude()
     Next cc
 
     If n = 0 Then
-        Application.StatusBar = "Claude: no hay ninguna respuesta en curso."
+        Application.StatusBar = "Pluma: no hay ninguna respuesta en curso."
         Exit Sub
     End If
     For Each cc In doc.ContentControls
@@ -174,11 +197,11 @@ Public Sub DetenerClaude()
             If enCursor = "" Or cc.Tag = enCursor Then PedirParada doc, cc.Tag
         End If
     Next cc
-    Application.StatusBar = "Claude: deteniendo" & ChrW(8230)
+    Application.StatusBar = "Pluma: deteniendo" & ChrW(8230)
     Exit Sub
 
 Fallo:
-    Application.StatusBar = "Claude: " & Err.Description
+    Application.StatusBar = "Pluma: " & Err.Description
     LogMacro "error al detener: " & Err.Number & " " & Err.Description
 End Sub
 
@@ -192,31 +215,25 @@ Private Function HayEnCurso(doc As Document) As Boolean
     Next cc
 End Function
 
-' Si el helper esta vivo, la macro no toca el bloque: le avisa con una variable
-' del documento y el helper corta Claude y cierra el bloque ordenadamente.
-' Si no hay helper (Word se cerro a mitad, o fallo), la macro cierra el bloque.
 Private Sub PedirParada(doc As Document, ByVal tag As String)
     If HelperVivo(doc, tag) Then
-        On Error Resume Next   ' si ya se pidio, la variable existe: no es un error
+        On Error Resume Next
         doc.Variables.Add tag & "-stop", "1"
     Else
         CerrarHuerfano doc, tag
     End If
 End Sub
 
-' El helper actualiza "<tag>-hb" (fecha OLE) cada segundo mientras trabaja.
 Private Function HelperVivo(doc As Document, ByVal tag As String) As Boolean
     On Error GoTo NoVivo
     Dim hb As Double
-    hb = Val(doc.Variables(tag & "-hb").Value)   ' Val usa "." siempre
+    hb = Val(doc.Variables(tag & "-hb").Value)
     HelperVivo = (CDbl(Now) - hb) * 86400# < 6
     Exit Function
 NoVivo:
     HelperVivo = False
 End Function
 
-' Cierra un bloque sin helper: conserva lo escrito (marcado con " ...") o, si
-' todavia decia "pensando", lo quita junto con su renglon vacio.
 Private Sub CerrarHuerfano(doc As Document, ByVal tag As String)
     On Error Resume Next
     Dim ccs As ContentControls, cc As ContentControl, par As Range
@@ -234,15 +251,12 @@ Private Sub CerrarHuerfano(doc As Document, ByVal tag As String)
         End If
     End If
     Dim sufijo As Variant
-    For Each sufijo In Array("-text", "-instr", "-color", "-stop", "-hb")
+    For Each sufijo In Array("-text", "-instr", "-color", "-stop", "-hb", "-agent", "-task")
         doc.Variables(tag & sufijo).Delete
     Next sufijo
-    doc.Bookmarks("_claude_" & Mid$(tag, Len(TAG_PREFIX) + 1)).Delete
+    doc.Bookmarks("_pluma_" & Mid$(tag, Len(TAG_PREFIX) + 1)).Delete
 End Sub
 
-' La respuesta hereda estilo, fuente y parrafo del texto de ella: InsertParagraphAfter
-' solo copia el formato de la marca de parrafo, que puede no coincidir con el de las
-' letras. Si ella escribio un titulo o un item de lista, la respuesta va como Normal.
 Private Sub CopiarFormato(ByVal origen As Range, ByVal destino As Range)
     Dim par As Paragraph
     Set par = origen.Paragraphs(1)
@@ -257,7 +271,6 @@ Private Sub CopiarFormato(ByVal origen As Range, ByVal destino As Range)
     destino.Font = PrimerCaracterDeTexto(origen).Font.Duplicate
 End Sub
 
-' Primer caracter visible (no imagen ni espacio), para copiar su fuente.
 Private Function PrimerCaracterDeTexto(ByVal r As Range) As Range
     Dim c As Range
     For Each c In r.Characters
@@ -269,7 +282,6 @@ Private Function PrimerCaracterDeTexto(ByVal r As Range) As Range
     Set PrimerCaracterDeTexto = r.Characters(1)
 End Function
 
-' Color del texto de ella (wdColorAutomatic si es mixto o no hay texto).
 Private Function ColorDelTexto(ByVal r As Range) As Long
     Dim color As Long
     color = PrimerCaracterDeTexto(r).Font.Color
@@ -277,20 +289,12 @@ Private Function ColorDelTexto(ByVal r As Range) As Long
     ColorDelTexto = color
 End Function
 
-' Que se envia sin tener que seleccionar. Mensaje = BLOQUE: los renglones
-' seguidos con contenido (texto o imagen), cortando en lineas vacias y en
-' respuestas anteriores de Claude.
-'   - Con seleccion: exactamente lo seleccionado.
-'   - Cursor en un bloque: todo el bloque.
-'   - Cursor en una linea vacia: el bloque de arriba.
-'   - Bloque con solo lineas "@claude ...": se suma el bloque de arriba.
-Private Function RangoAEnviar() As Range
+Private Function RangoAEnviar(ByVal ids As String) As Range
     If Selection.Type <> wdSelectionIP Then
         Set RangoAEnviar = Selection.Range
         Exit Function
     End If
 
-    ' Los marcadores de respuesta son ocultos: sin ShowHidden no se ven.
     Dim doc As Document, ocultos As Boolean
     Set doc = Selection.Document
     ocultos = doc.Bookmarks.ShowHidden
@@ -306,7 +310,7 @@ Private Function RangoAEnviar() As Range
 
     Dim r As Range
     Set r = BloqueDe(p)
-    If SoloInstrucciones(r) Then
+    If SoloInstrucciones(r, ids) Then
         Dim arriba As Paragraph
         Set arriba = r.Paragraphs(1).Previous
         Do Until arriba Is Nothing
@@ -322,8 +326,6 @@ Restaurar:
     If Err.Number <> 0 Then Err.Raise Err.Number, , Err.Description
 End Function
 
-' Renglones seguidos alrededor de p. Corta en lineas vacias, en el limite de
-' parrafos y donde cambia "respuesta de Claude / texto de ella".
 Private Function BloqueDe(ByVal p As Paragraph) As Range
     Dim r As Range, q As Paragraph, n As Long, resp As Boolean
     Set r = p.Range.Duplicate
@@ -359,7 +361,6 @@ Private Function EsVacio(ByVal q As Paragraph) As Boolean
     EsVacio = (Len(LimpiarLinea(q.Range.Text)) = 0 And q.Range.InlineShapes.Count = 0)
 End Function
 
-' El helper marca cada respuesta terminada con un marcador oculto "_claude_r<id>".
 Private Function EsRespuesta(ByVal q As Paragraph) As Boolean
     Dim b As Bookmark
     For Each b In q.Range.Bookmarks
@@ -370,16 +371,116 @@ Private Function EsRespuesta(ByVal q As Paragraph) As Boolean
     Next b
 End Function
 
-Private Function SoloInstrucciones(ByVal r As Range) As Boolean
-    Dim q As Paragraph
+Private Function SoloInstrucciones(ByVal r As Range, ByVal ids As String) As Boolean
+    Dim q As Paragraph, a As String, resto As String
     For Each q In r.Paragraphs
-        If Not EsVacio(q) And Not EsInstruccion(LimpiarLinea(q.Range.Text)) Then Exit Function
+        If Not EsVacio(q) Then
+            If Not SepararAgente(LimpiarLinea(q.Range.Text), ids, a, resto) Then Exit Function
+        End If
     Next q
     SoloInstrucciones = True
 End Function
 
-Private Function EsInstruccion(ByVal linea As String) As Boolean
-    EsInstruccion = (LCase$(Left$(linea, Len(INSTR_PREFIX))) = INSTR_PREFIX)
+' Una linea es mencion si arranca con @ y el token esta en agents.json.
+' agente vuelve en minuscula; resto es la instruccion, sin los dos puntos iniciales.
+Private Function SepararAgente(ByVal linea As String, ByVal ids As String, ByRef agente As String, ByRef resto As String) As Boolean
+    SepararAgente = False
+    agente = ""
+    resto = ""
+    If Left$(linea, 1) <> "@" Then Exit Function
+    Dim i As Long, token As String, c As String
+    i = 2
+    Do While i <= Len(linea)
+        c = Mid$(linea, i, 1)
+        If c = " " Or c = ":" Or c = vbTab Then Exit Do
+        If Not (c Like "[A-Za-z0-9_-]") Then Exit Function
+        token = token & c
+        i = i + 1
+    Loop
+    If Len(token) = 0 Then Exit Function
+    If InStr(1, ids, "|" & LCase$(token) & "|", vbTextCompare) = 0 Then Exit Function
+    agente = LCase$(token)
+    resto = Trim$(Mid$(linea, i))
+    If Left$(resto, 1) = ":" Then resto = Trim$(Mid$(resto, 2))
+    SepararAgente = True
+End Function
+
+Private Function IdsDeAgentes() As String
+    On Error GoTo Fallback
+    Dim ruta As String, txt As String, ids As String, token As String
+    Dim re As Object, ms As Object, i As Long
+    ruta = RutaWorkspace()
+    If Len(ruta) = 0 Then GoTo Fallback
+    txt = LeerArchivo(ruta & "\agents.json")
+    If Len(txt) = 0 Then GoTo Fallback
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = True
+    re.IgnoreCase = True
+    re.Pattern = """id""\s*:\s*""([A-Za-z0-9_\-]+)"""
+    Set ms = re.Execute(txt)
+    ids = "|"
+    For i = 0 To ms.Count - 1
+        token = LCase$(ms(i).SubMatches(0))
+        If InStr(1, ids, "|" & token & "|", vbTextCompare) = 0 Then ids = ids & token & "|"
+    Next i
+    If ids <> "|" Then
+        IdsDeAgentes = ids
+        Exit Function
+    End If
+Fallback:
+    IdsDeAgentes = "|claude|codex|gemini|grok|hermes|aider|"
+End Function
+
+Private Function RutaWorkspace() As String
+    On Error GoTo Fin
+    Dim txt As String, re As Object, ms As Object
+    txt = LeerArchivo(Environ$("LOCALAPPDATA") & "\Pluma\config.json")
+    If Len(txt) = 0 Then Exit Function
+    Set re = CreateObject("VBScript.RegExp")
+    re.Pattern = """workspace""\s*:\s*""((?:\\.|[^""\\])*)"""
+    Set ms = re.Execute(txt)
+    If ms.Count > 0 Then RutaWorkspace = UnescapeJson(CStr(ms(0).SubMatches(0)))
+Fin:
+End Function
+
+Private Function UnescapeJson(ByVal s As String) As String
+    Dim i As Long, c As String, n As String, out As String
+    i = 1
+    Do While i <= Len(s)
+        c = Mid$(s, i, 1)
+        If c = "\" And i < Len(s) Then
+            n = Mid$(s, i + 1, 1)
+            If n = "\" Or n = "/" Or n = """" Then
+                out = out & n
+            ElseIf n = "n" Then
+                out = out & vbLf
+            ElseIf n = "r" Then
+                out = out & vbCr
+            ElseIf n = "t" Then
+                out = out & vbTab
+            Else
+                out = out & n
+            End If
+            i = i + 2
+        Else
+            out = out & c
+            i = i + 1
+        End If
+    Loop
+    UnescapeJson = out
+End Function
+
+Private Function LeerArchivo(ByVal ruta As String) As String
+    On Error GoTo Fin
+    Dim n As Long, f As Integer
+    n = FileLen(ruta)
+    If n <= 0 Or n > 2000000 Then Exit Function
+    f = FreeFile
+    Open ruta For Binary Access Read As #f
+    LeerArchivo = Space$(n)
+    Get #f, , LeerArchivo
+    Close #f
+Fin:
 End Function
 
 Private Function LimpiarLinea(ByVal s As String) As String

@@ -1,0 +1,153 @@
+{
+  "default": "claude",
+  "agents": [
+    {
+      "id": "claude",
+      "enabled": true,
+      "label": "Claude",
+      "command": "claude",
+      "args": [
+        "-p",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--include-partial-messages",
+        "--verbose",
+        "--setting-sources",
+        "project",
+        "--strict-mcp-config",
+        "--no-session-persistence",
+        "--tools",
+        "Read,Glob,Grep,Skill"
+      ],
+      "promptVia": "stdin",
+      "promptFormat": "claude-message",
+      "parser": "claude-stream",
+      "images": "claude",
+      "modelArg": "--model",
+      "rules": "file-arg",
+      "rulesArg": "--append-system-prompt-file",
+      "context": "none",
+      "env": {
+        "CLAUDE_CONFIG_DIR": "{claudeConfigDir}"
+      }
+    },
+    {
+      "id": "codex",
+      "enabled": true,
+      "label": "Codex",
+      "command": "codex",
+      "args": [
+        "exec",
+        "-",
+        "--json",
+        "--skip-git-repo-check",
+        "--ephemeral",
+        "-s",
+        "read-only"
+      ],
+      "promptVia": "stdin",
+      "promptFormat": "text",
+      "parser": "codex-jsonl",
+      "images": "files",
+      "imageArg": "-i",
+      "modelArg": "--model",
+      "rules": "prepend",
+      "context": "prepend"
+    },
+    {
+      "id": "gemini",
+      "enabled": true,
+      "label": "Gemini",
+      "command": "gemini",
+      "args": [
+        "--output-format",
+        "stream-json"
+      ],
+      "promptVia": "stdin",
+      "promptFormat": "text",
+      "parser": "gemini-stream",
+      "images": "none",
+      "modelArg": "--model",
+      "rules": "prepend",
+      "context": "prepend"
+    },
+    {
+      "id": "grok",
+      "enabled": true,
+      "label": "Grok",
+      "command": "grok",
+      "note": "Headless documentado. No lee el prompt por stdin: va en --prompt-file. La salida es streaming-json (eventos text/tool_call/end). No hay un flag de imagen estable; para fotos usá @claude, @codex o @hermes. Si esta versión no acepta --yolo, cambialo por --always-approve.",
+      "args": [
+        "--no-auto-update",
+        "--verbatim",
+        "--yolo",
+        "--output-format",
+        "streaming-json",
+        "--tools",
+        "read_file,grep,list_dir"
+      ],
+      "promptVia": "file",
+      "promptArg": "--prompt-file",
+      "parser": "grok-stream",
+      "images": "none",
+      "modelArg": "--model",
+      "rules": "prepend",
+      "context": "prepend"
+    },
+    {
+      "id": "hermes",
+      "enabled": true,
+      "label": "Hermes",
+      "command": "hermes",
+      "note": "Headless documentado: hermes chat --oneshot --query-file --format stream-json. Stdout es JSONL (text, tool_use, result). --image acepta una sola imagen. --yolo evita que se quede esperando un permiso en consola; puede usar las herramientas que tenga configuradas.",
+      "args": [
+        "chat",
+        "--oneshot",
+        "--format",
+        "stream-json",
+        "--source",
+        "tool",
+        "--yolo"
+      ],
+      "promptVia": "file",
+      "promptArg": "--query-file",
+      "parser": "hermes-stream",
+      "images": "files",
+      "imageArg": "--image",
+      "maxImages": 1,
+      "modelArg": "--model",
+      "rules": "prepend",
+      "context": "prepend"
+    },
+    {
+      "id": "aider",
+      "enabled": true,
+      "label": "Aider",
+      "command": "aider",
+      "args": [
+        "--yes-always",
+        "--no-auto-commits",
+        "--no-dirty-commits",
+        "--no-git",
+        "--no-check-update",
+        "--no-stream",
+        "--no-pretty",
+        "--dry-run",
+        "--chat-history-file",
+        "{run}/history.md",
+        "--llm-history-file",
+        "{run}/llm.txt"
+      ],
+      "promptVia": "file",
+      "promptArg": "--message-file",
+      "parser": "text",
+      "stream": false,
+      "images": "none",
+      "modelArg": "--model",
+      "rules": "prepend",
+      "context": "prepend"
+    }
+  ]
+}

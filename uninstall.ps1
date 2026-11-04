@@ -1,4 +1,4 @@
-# Desinstala Claude para Word. El workspace (rol/soul/contexto) NO se borra.
+# Desinstala Pluma para Word. El workspace (rol, tareas, agentes) NO se borra.
 #   powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
 
 $ErrorActionPreference = 'Stop'
@@ -14,7 +14,8 @@ finally {
     [Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null
 }
 
+Remove-Item (Join-Path $startup 'Pluma.dotm') -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $startup 'ClaudeWord.dotm') -ErrorAction SilentlyContinue
-Remove-Item (Join-Path $env:LOCALAPPDATA 'ClaudeWord') -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $env:LOCALAPPDATA 'Pluma') -Recurse -Force -ErrorAction SilentlyContinue
 
-Write-Host 'Claude para Word desinstalado. El workspace quedo intacto.' -ForegroundColor Green
+Write-Host 'Pluma desinstalado. El workspace quedo intacto.' -ForegroundColor Green
