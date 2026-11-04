@@ -1,70 +1,107 @@
 # Instalación en una PC nueva
 
-Tiempo estimado: 10 minutos. No hace falta ser administrador.
+Unos minutos. No hace falta ser administrador.
 
 ## Qué hace falta
 
 - Windows 10 u 11 con **Word de escritorio**: 2016, 2019, 2021 o Microsoft 365. Word en la web no sirve.
-- Una cuenta de Claude con plan **Pro, Max, Team o Enterprise**. El plan gratuito no incluye Claude Code.
-- La carpeta del workspace de ella (CLAUDE.md, soul.md, files/, skills), que va aparte y **no está en este ZIP**.
+- Al menos uno de estos programas, con la sesión ya iniciada:
+  - **Claude Code** (hace falta un plan Pro, Max, Team o Enterprise; el plan gratuito no incluye Claude Code)
+  - **Codex CLI**
+  - **Gemini CLI**
+  - **Grok CLI**
+  - **Hermes**, de Nous Research
+  - **aider**
+- Si ya tenés un workspace armado (rol, notas, archivos), copialo aparte. No viene en el ZIP.
 
-## Paso 1 — Instalar Claude Code
+## Paso 1 — Instalar un agente
 
-Abrir **PowerShell** (menú Inicio → escribir "PowerShell") y pegar:
+Abrí **PowerShell** (menú Inicio → escribir "PowerShell") y pegá el que vayas a usar. Podés instalar más de uno: el instalador de Pluma detecta cuáles están.
 
 ```powershell
+# Claude Code
 irm https://claude.ai/install.ps1 | iex
-```
-
-Después, en la misma ventana:
-
-```powershell
 claude
+
+# Codex CLI
+npm install -g @openai/codex
+
+# Gemini CLI
+npm install -g @google/gemini-cli
+
+# Grok CLI
+irm https://x.ai/cli/install.ps1 | iex
+grok
+
+# Hermes
+iex (irm https://hermes-agent.nousresearch.com/install.ps1)
+
+# aider
+pipx install aider-chat
 ```
 
-Se abre el navegador para **iniciar sesión con la cuenta de ella**. Cuando termine, escribir `/exit` para salir. Esto se hace una sola vez.
+Con Claude y con Grok, la primera vez se abre el navegador para iniciar sesión. Cuando termine, salí (`/exit` en Claude). Con Hermes, seguí lo que pida el instalador para elegir el modelo. Esto se hace una sola vez.
 
-> Git for Windows **no** hace falta: el conector no usa comandos de consola.
+Cerrá esa ventana de PowerShell y abrí otra, así toma el PATH nuevo.
 
-## Paso 2 — Copiar el workspace
+> Git for Windows no hace falta para Pluma. Algún instalador de los CLI puede pedirlo por su cuenta.
 
-Copiar la carpeta del workspace a su PC, por ejemplo a `Documentos\Claude-Ella`.
+## Paso 2 — El workspace
 
-Si se copia a `Documentos\Claude-Word`, en el paso 3 no hace falta indicar la ruta: el instalador la usa por defecto.
+Si ya tenés la carpeta con el rol y las notas, copiala a la PC, por ejemplo a `Documentos\Pluma`.
 
-## Paso 3 — Instalar el conector
+Si no existe, el instalador crea una plantilla en `Documentos\Pluma`. Después editá `PLUMA.md` y `context/estilo.md`.
 
-1. **Cerrar Word** por completo.
-2. Descomprimir `ClaudeWord-instalador.zip` en cualquier lugar, por ejemplo el Escritorio.
-3. Abrir la carpeta `ClaudeWord`:
-   - Si el workspace está en `Documentos\Claude-Word` → **doble clic en `instalar.cmd`**.
-   - Si está en otra ruta → en esa carpeta, clic derecho en un espacio vacío → *Abrir en Terminal*, y ejecutar:
+## Paso 3 — Instalar Pluma
+
+1. **Cerrá Word** por completo.
+2. Descomprimí `Pluma-instalador.zip` en cualquier lugar, por ejemplo el Escritorio.
+3. Abrí la carpeta `Pluma`:
+   - Si el workspace está en `Documentos\Pluma` → **doble clic en `instalar.cmd`**.
+   - Si está en otra ruta → en esa carpeta, clic derecho en un espacio vacío → *Abrir en Terminal*, y ejecutá:
      ```
-     .\instalar.cmd -Workspace "C:\Users\ELLA\Documents\Claude-Ella"
+     .\instalar.cmd -Workspace "C:\ruta\al\workspace"
      ```
-4. Tiene que terminar con **`Listo`** en verde. La línea `Office` al principio muestra su versión de Word.
+4. Al principio lista cada CLI: la ruta si lo encontró, o `(no instalado)`. Tiene que terminar con **`Listo`** en verde. La línea `Office` muestra la versión de Word.
 
-Después de instalar, la carpeta descomprimida se puede borrar.
+El agente por defecto es el primero que encuentre, en este orden: Claude, Codex, Gemini, Grok, Hermes, aider. Para forzar uno: `.\instalar.cmd -DefaultAgent grok`.
+
+Después de instalar, la carpeta descomprimida se puede borrar. El workspace no.
+
+Si en esa PC había una versión anterior (Claude para Word), el instalador saca `ClaudeWord.dotm` para que Alt+Enter no quede enganchado dos veces. La carpeta vieja `%LOCALAPPDATA%\ClaudeWord` no se borra sola: la podés eliminar a mano si ya no la usás.
 
 ## Paso 4 — Probar
 
-Abrir Word, escribir una pregunta, dejar el cursor en ese párrafo y presionar **Alt+Enter**. También se puede hacer clic derecho → **Enviar a Claude**.
+Abrí Word, escribí una pregunta, dejá el cursor en ese párrafo y presioná **Alt+Enter**. También podés hacer clic derecho → **Pluma** → **Enviar**.
 
-Tiene que aparecer "✳ Claude está pensando…" en gris muy claro, y después la respuesta, escribiéndose palabra por palabra.
+Tiene que aparecer un aviso en gris muy claro y, después, la respuesta escribiéndose.
+
+La configuración (agente por defecto, atajo y color mientras se escribe) está en clic derecho → **Pluma → Configuración…**, o en el acceso directo **Pluma** del menú Inicio. Si instalaste antes de esa ventana, volvé a correr `instalar.cmd` para que aparezcan el ítem y el acceso directo.
+
+Para otro agente, en el mismo párrafo:
+
+```
+@grok resumí esto en tres oraciones
+```
+
+La línea `@grok` desaparece y responde Grok. Lo mismo con `@hermes`, `@codex`, `@gemini`, `@claude` y `@aider`.
+
+Para una tarea fija, seleccioná el texto y usá clic derecho → Pluma → Corregir, Más formal, Resumir, Expandir o Traducir.
 
 ## Si algo falla
 
 | Síntoma | Solución |
 |---|---|
-| El instalador dice "No encuentro claude.exe" | Repetir el paso 1 y cerrar y volver a abrir PowerShell |
-| Alt+Enter no hace nada, pero el clic derecho sí | Otro programa usa ese atajo (pasó con AMD Adrenalin y Ctrl+Alt+Shift+K). Buscar el atajo en ese programa, o usar el clic derecho |
-| Ni el atajo ni el clic derecho hacen nada | En Word: **Archivo → Opciones → Complementos → Administrar: Plantillas → Ir**. `ClaudeWord.dotm` tiene que estar tildado |
-| Aparece "⚠ Claude no pudo responder: … login …" | Correr `claude` en PowerShell y volver a iniciar sesión |
-| Cualquier otra cosa | Revisar `%LOCALAPPDATA%\ClaudeWord\logs\last.log` |
+| El instalador dice que no hay ningún CLI | Repetí el paso 1 y abrí una PowerShell nueva |
+| Alt+Enter no hace nada, pero el clic derecho sí | Otro programa usa ese atajo. Usá el clic derecho |
+| Ni el atajo ni el clic derecho hacen nada | En Word: **Archivo → Opciones → Complementos → Administrar: Plantillas → Ir**. `Pluma.dotm` tiene que estar tildado |
+| "no está habilitado" o "no encontré" | Ese programa no estaba instalado. Instalálo y volvé a correr el instalador después de borrar `agents.json`, o editá la ruta y poné `"enabled": true` |
+| Aparece un aviso de login o de sesión | Abrí el CLI en PowerShell (`claude`, `grok`, `hermes`, etc.) e iniciá sesión de nuevo |
+| Cualquier otra cosa | Revisá `%LOCALAPPDATA%\Pluma\logs\last.log` |
 
 ## Ajustes sin reinstalar
 
-En `%LOCALAPPDATA%\ClaudeWord\config.json` se cambian la carpeta del workspace, la velocidad de escritura y las pausas. Los cambios valen desde el siguiente pedido. El detalle está en el README.
+En `%LOCALAPPDATA%\Pluma\config.json` se cambian la carpeta del workspace, el agente por defecto y la velocidad de escritura. En el `agents.json` del workspace se cambian los comandos. Los dos valen desde el siguiente pedido. El detalle está en el README.
 
 ## Desinstalar
 
